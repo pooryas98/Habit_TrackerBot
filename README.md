@@ -147,14 +147,3 @@ IGNORE_WHEN_COPYING_START
 content_copy
 download
 Use code with caution.
-IGNORE_WHEN_COPYING_END
-
-Next Steps:
-
-Create .env.example: Copy the example content provided above into a file named .env.example in your project root.
-
-Create LICENSE file: If you choose the MIT license (or another), create a file named LICENSE and paste the full license text into it.
-
-Replace https://github.com/your-username/habit-tracker-bot.git in the README with the actual URL of your repository.
-
-Commit the README.md, .env.example, and LICENSE files to your repository.
