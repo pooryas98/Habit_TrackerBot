@@ -136,38 +136,6 @@ Interact with the bot on Telegram using these commands:
 
 **Note:** You can use `/skip` during conversations (add/edit habit) to skip optional fields like description or category.
 
-## Project Structure
-
-
-habit-tracker-bot/
-├── .env # Local environment variables (ignored by git)
-├── .env.example # Example environment file
-├── .gitignore # Specifies intentionally untracked files that Git should ignore
-├── config.py # Loads configuration from environment variables
-├── database/
-│ ├── init.py # Exports database functions
-│ └── db_manager.py # Handles all SQLite database interactions (CRUD operations)
-├── handlers/
-│ ├── init.py # Exports handler modules/functions
-│ ├── add_habit.py # Conversation handler for adding habits
-│ ├── edit_habit.py # Conversation handler for editing habits
-│ ├── manage_habits.py# Conversation handler for deleting habits
-│ ├── mark_done.py # Handlers for /done command and 'Done' buttons
-│ ├── reminders.py # Handlers for setting/managing reminders and job execution
-│ ├── start.py # Handlers for /start, /help, /refresh_membership
-│ ├── view_habits.py # Handlers for /today, /history, /stats
-│ └── errors.py # Global error handler
-├── main.py # Main application entry point, sets up PTB and registers handlers
-├── requirements.txt # Python package dependencies
-├── utils/
-│ ├── init.py # Exports utility modules/functions
-│ ├── checks.py # Membership checking logic and decorator
-│ ├── constants.py # Callback data prefixes, conversation states, command names
-│ ├── helpers.py # Utility functions (date/time parsing, formatting, escaping)
-│ ├── keyboards.py # Functions to generate inline keyboards
-│ └── localization.py # User-facing strings (currently Persian/Farsi)
-└── venv/ # Virtual environment directory (ignored by git)
-
 ## Contributing
 
 Contributions are welcome! Please feel free to open an issue to discuss bugs or feature requests, or submit a pull request.
