@@ -8,18 +8,25 @@ from telegram.ext import (
 
 from utils import localization as lang
 from utils import constants as c
-from database import db_manager # Import db_manager module
+from database import db_manager
+# --- Add imports ---
+from utils.checks import require_membership
+# --- End imports ---
 
 logger = logging.getLogger(__name__)
 
 # Unpack conversation states
 (ASK_NAME, ASK_DESCRIPTION, ASK_CATEGORY) = c.ADD_HABIT_STATES
 
+# --- Apply decorator ---
+@require_membership
 async def ask_habit_name(update: Update, context: CallbackContext) -> int:
     """Starts the conversation and asks for the habit name."""
+    # Decorator handles membership check before this runs
     if not update.message: return ConversationHandler.END
     await update.message.reply_text(lang.PROMPT_HABIT_NAME)
     return ASK_NAME
+# --- End decorator application ---
 
 async def receive_habit_name(update: Update, context: CallbackContext) -> int:
     """Stores the name and asks for description."""
@@ -83,7 +90,6 @@ async def receive_habit_category_and_save(update: Update, context: CallbackConte
     logger.debug(f"Received category '{category_log}'. Saving habit '{name}' for user {user.id}.")
 
     try:
-        # Call db_manager directly
         habit_id = await db_manager.add_habit_db(user.id, name, description, category_val)
 
         if habit_id:
@@ -98,7 +104,6 @@ async def receive_habit_category_and_save(update: Update, context: CallbackConte
          logger.error(f"Error saving habit: {e}", exc_info=True)
          await update.message.reply_text(lang.ERR_HABIT_ADD_FAILED)
 
-    # Clean up context
     _clear_add_habit_context(context)
     return ConversationHandler.END
 
@@ -116,10 +121,12 @@ def _clear_add_habit_context(context: CallbackContext):
     context.user_data.pop('new_habit_description', None)
     context.user_data.pop('new_habit_category', None)
 
+# --- Use decorated function in entry_points ---
 def add_habit_conv_handler() -> ConversationHandler:
     """Creates the ConversationHandler for adding habits."""
+    # The ask_habit_name function itself is already decorated now
     return ConversationHandler(
-        entry_points=[CommandHandler(c.CMD_ADD_HABIT, ask_habit_name)],
+        entry_points=[CommandHandler(c.CMD_ADD_HABIT, ask_habit_name)], # Use original name
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_habit_name)],
             ASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND | filters.Regex(f'^({lang.CMD_SKIP}|/skip)$'), receive_habit_description)],
@@ -129,3 +136,4 @@ def add_habit_conv_handler() -> ConversationHandler:
         persistent=False,
         name="add_habit_conversation"
     )
+# --- End change ---

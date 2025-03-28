@@ -1,7 +1,7 @@
 # handlers/reminders.py
 
 import logging
-from telegram import Update, InlineKeyboardMarkup # Import InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardMarkup
 from telegram.ext import (
     CommandHandler, MessageHandler, filters, ConversationHandler, CallbackContext, JobQueue, CallbackQueryHandler, Job
 )
@@ -10,18 +10,19 @@ import datetime
 from typing import cast, Optional, List, Tuple
 import aiosqlite
 
-# Use config for timezone
 from config import USER_TIMEZONE
 from utils import localization as lang, helpers, keyboards, constants as c
 from database import db_manager
+# --- Add imports ---
+from utils.checks import require_membership
+# --- End imports ---
 
 logger = logging.getLogger(__name__)
 
-# --- Updated Conversation States ---
-(SELECT_REMINDER_HABIT, ASK_REMINDER_TIME) = c.SET_REMINDER_STATES # <--- Uses new state name
+# Updated Conversation States
+(SELECT_REMINDER_HABIT, ASK_REMINDER_TIME) = c.SET_REMINDER_STATES
 
 # --- Reminder Callback Function (Job Execution) ---
-# (reminder_callback remains the same)
 async def reminder_callback(context: CallbackContext):
     """The function called by the JobQueue to send a reminder."""
     job = context.job
@@ -61,9 +62,7 @@ async def reminder_callback(context: CallbackContext):
 
 
 # --- Helper to remove jobs ---
-# (remove_job_if_exists remains the same)
 def remove_job_if_exists(name: str, job_queue: Optional[JobQueue]) -> bool:
-    """Removes a job by name from the queue if it exists. Returns True if removed."""
     if not job_queue: logger.error(f"Cannot remove job '{name}', JobQueue is missing."); return False
     current_jobs = job_queue.get_jobs_by_name(name)
     if not current_jobs: logger.debug(f"No job found with name '{name}' to remove."); return False
@@ -71,9 +70,7 @@ def remove_job_if_exists(name: str, job_queue: Optional[JobQueue]) -> bool:
     for job in current_jobs: job.schedule_removal(); removed = True; logger.info(f"Scheduled removal for job '{job.name}'")
     return removed
 
-# (_remove_reminder_and_job remains the same)
 async def _remove_reminder_and_job(jq: Optional[JobQueue], habit_id: int, job_name: Optional[str] = None) -> bool:
-    """Helper to remove reminder from DB and JobQueue. Fetches job_name if not provided."""
     logger.warning(f"Attempting to remove reminder and job for habit {habit_id}.")
     removed_db, removed_jq = False, False
     try:
@@ -97,8 +94,11 @@ async def _remove_reminder_and_job(jq: Optional[JobQueue], habit_id: int, job_na
 
 # --- Conversation for Setting Reminder ---
 
-async def ask_reminder_habit(update: Update, context: CallbackContext) -> int: # <--- ENTRY POINT MODIFIED
+# --- Apply decorator ---
+@require_membership
+async def ask_reminder_habit(update: Update, context: CallbackContext) -> int:
     """ENTRY POINT: Asks user to select a habit from a list."""
+    # Decorator handles membership check
     if not update.message or not update.effective_user: return ConversationHandler.END
     user_id = update.effective_user.id
 
@@ -111,7 +111,7 @@ async def ask_reminder_habit(update: Update, context: CallbackContext) -> int: #
         keyboard = keyboards.select_habit_keyboard(user_habits, c.CALLBACK_SELECT_REMINDER_HABIT)
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(lang.PROMPT_SELECT_REMINDER_HABIT_LIST, reply_markup=reply_markup)
-        return SELECT_REMINDER_HABIT # Go to state waiting for button press
+        return SELECT_REMINDER_HABIT
 
     except ConnectionError:
         logger.error("Database connection unavailable for ask_reminder_habit")
@@ -121,8 +121,8 @@ async def ask_reminder_habit(update: Update, context: CallbackContext) -> int: #
         logger.error(f"Error fetching habits for reminder selection: {e}", exc_info=True)
         await update.message.reply_text(lang.MSG_ERROR_GENERAL)
         return ConversationHandler.END
+# --- End decorator application ---
 
-# --- NEW FUNCTION to handle button press ---
 async def select_reminder_habit_callback(update: Update, context: CallbackContext) -> int:
     """Handles habit selection via button press and asks for time."""
     query = update.callback_query
@@ -147,7 +147,7 @@ async def select_reminder_habit_callback(update: Update, context: CallbackContex
         logger.debug(f"User selected habit '{habit_name}' (ID: {habit_id}) for reminder.")
 
         await query.edit_message_text(lang.PROMPT_REMINDER_TIME.format(habit_name=habit_name))
-        return ASK_REMINDER_TIME # Move to state waiting for time input
+        return ASK_REMINDER_TIME
 
     except (IndexError, ValueError):
         logger.error(f"Could not parse habit_id from callback data: {query.data}", exc_info=True)
@@ -162,9 +162,6 @@ async def select_reminder_habit_callback(update: Update, context: CallbackContex
          await query.edit_message_text(lang.MSG_ERROR_GENERAL)
          return ConversationHandler.END
 
-# --- receive_reminder_habit function REMOVED ---
-
-# (receive_reminder_time_and_set remains the same logic)
 async def receive_reminder_time_and_set(update: Update, context: CallbackContext) -> int:
     """Receives time, sets the reminder job, and saves to DB."""
     if not update.message or not update.message.text: return ASK_REMINDER_TIME
@@ -227,24 +224,19 @@ async def receive_reminder_time_and_set(update: Update, context: CallbackContext
     return ConversationHandler.END
 
 
-async def cancel_reminder_conv(update: Update, context: CallbackContext) -> int: # <--- UPDATED TO HANDLE CALLBACK QUERY CANCELLATION
-    """Cancels the reminder setting conversation."""
+async def cancel_reminder_conv(update: Update, context: CallbackContext) -> int:
     message = lang.MSG_CANCELLED
     edit_failed = False
     if update.callback_query:
          await update.callback_query.answer()
          try:
-             # Try editing the message where the button was pressed
              await update.callback_query.edit_message_text(message)
          except Exception as e:
               logger.debug(f"Could not edit message on cancel: {e}")
               edit_failed = True
-              # If editing failed, try sending a new message if possible
               if update.effective_message:
-                   try:
-                       await update.effective_message.reply_text(message)
-                   except Exception as e2:
-                        logger.warning(f"Could not send cancel message either: {e2}")
+                   try: await update.effective_message.reply_text(message)
+                   except Exception as e2: logger.warning(f"Could not send cancel message either: {e2}")
     elif update.effective_message:
         await update.effective_message.reply_text(message)
 
@@ -253,14 +245,15 @@ async def cancel_reminder_conv(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 def _clear_reminder_context(context: CallbackContext):
-    """Helper to clear user_data for this conversation."""
     context.user_data.pop('reminder_habit_id', None)
     context.user_data.pop('reminder_habit_name', None)
 
-def set_reminder_conv_handler(): # <--- CONVERSATION STRUCTURE UPDATED
+# --- Use decorated function in entry_points ---
+def set_reminder_conv_handler():
     """Creates the ConversationHandler for setting reminders."""
+    # ask_reminder_habit is already decorated
     return ConversationHandler(
-        entry_points=[CommandHandler(c.CMD_SET_REMINDER, ask_reminder_habit)],
+        entry_points=[CommandHandler(c.CMD_SET_REMINDER, ask_reminder_habit)], # Use original name
         states={
             SELECT_REMINDER_HABIT: [
                 CallbackQueryHandler(select_reminder_habit_callback, pattern=f"^{c.CALLBACK_SELECT_REMINDER_HABIT}")
@@ -271,18 +264,16 @@ def set_reminder_conv_handler(): # <--- CONVERSATION STRUCTURE UPDATED
         },
         fallbacks=[
             CommandHandler(c.CMD_CANCEL, cancel_reminder_conv),
-            # Also allow cancelling via button press if needed (though not strictly necessary here)
-            # CallbackQueryHandler(cancel_reminder_conv, pattern="^cancel_reminder$") # Example
         ],
         persistent=False,
         name="set_reminder_conversation"
     )
+# --- End change ---
 
 # --- Manage/Delete Reminders ---
-# (list_reminders, delete_reminder_button, manage_reminders_handler,
-#  delete_reminder_button_handler, schedule_all_reminders remain the same)
+# No changes needed below this line for membership check in this file
 async def list_reminders(update: Update, context: CallbackContext) -> None:
-    """Lists active reminders with buttons to delete."""
+    # ... (implementation unchanged) ...
     if not update.effective_message or not update.effective_user: return
     user_id = update.effective_user.id
     try:
@@ -302,8 +293,9 @@ async def list_reminders(update: Update, context: CallbackContext) -> None:
     except ConnectionError: logger.error("Database connection unavailable for list_reminders"); await update.effective_message.reply_text(lang.ERR_DATABASE_CONNECTION)
     except Exception as e: logger.error(f"Error listing reminders: {e}", exc_info=True); await update.effective_message.reply_text(lang.MSG_ERROR_GENERAL)
 
+
 async def delete_reminder_button(update: Update, context: CallbackContext) -> None:
-    """Handles pressing the 'Delete Reminder' button."""
+    # ... (implementation unchanged) ...
     query = update.callback_query; await query.answer()
     job_queue = cast(JobQueue, context.job_queue)
     if not job_queue: logger.error("JobQueue not found"); await query.edit_message_text(lang.ERR_REMINDER_DELETE_FAILED_INTERNAL); return
@@ -319,11 +311,11 @@ async def delete_reminder_button(update: Update, context: CallbackContext) -> No
     except ConnectionError: logger.error("DB unavailable"); await query.edit_message_text(lang.ERR_DATABASE_CONNECTION)
     except Exception as e: logger.error(f"Error deleting reminder: {e}", exc_info=True); await query.edit_message_text(lang.ERR_REMINDER_DELETE_FAILED_INTERNAL)
 
-def manage_reminders_handler(): return CommandHandler(c.CMD_MANAGE_REMINDERS, list_reminders)
-def delete_reminder_button_handler(): return CallbackQueryHandler(delete_reminder_button, pattern=f"^{c.CALLBACK_DELETE_REMINDER}")
+def manage_reminders_handler(): return CommandHandler(c.CMD_MANAGE_REMINDERS, list_reminders) # Needs decoration in main.py
+def delete_reminder_button_handler(): return CallbackQueryHandler(delete_reminder_button, pattern=f"^{c.CALLBACK_DELETE_REMINDER}") # Needs decoration in main.py
 
 async def schedule_all_reminders(db: aiosqlite.Connection, job_queue: JobQueue):
-    """Loads all reminders from DB and schedules them on startup. Uses PASSED connection."""
+    # ... (implementation unchanged) ...
     logger.info("Scheduling reminders from database...")
     try:
         all_reminders = []
