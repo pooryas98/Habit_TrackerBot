@@ -1,160 +1,192 @@
-# Telegram Habit Tracker Bot (Persian)
+# Habit Tracker Telegram Bot
 
-[![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-v22+-blue)](https://python-telegram-bot.org/)
-[![aiosqlite](https://img.shields.io/badge/database-aiosqlite-orange)](https://github.com/omnilib/aiosqlite)
+[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Telegram bot built with Python and `python-telegram-bot` to help users track their daily habits. It supports adding habits, marking them as done, viewing progress, statistics, and setting daily reminders. The bot interface is primarily in Persian (Farsi).
+A feature-rich, asynchronous Telegram bot built with `python-telegram-bot` to help users track their habits effectively.
 
 ## Features
 
-*   ✅ **Add Habits:** Define new habits with optional descriptions and categories.
-*   ✅ **Mark Done:** Mark habits as completed for the day via command (`/done`) or inline buttons.
-*   ✅ **Today View:** See the status (pending/done) of all your habits for the current day with quick "Done" buttons.
-*   ✅ **History:** View a log of recently completed (or missed) habits.
-*   ✅ **Statistics:** Get insights into your habit consistency over the last 30 days, including completion rates and streaks (current and maximum).
-*   ✅ **Reminders:** Set, view, and delete daily reminders for specific habits at your chosen time.
-*   ✅ **Manage Habits:** Delete habits you no longer want to track (this also removes associated logs and reminders).
-*   ✅ **User-Friendly:** Conversation-based flows for adding/deleting habits and setting reminders.
-*   ✅ **Robust:** Asynchronous design using `asyncio` and `aiosqlite`, proper error handling, and configuration management.
-*   ✅ **Localization:** User-facing text is stored separately for easier modification (currently in Persian).
+*   **Habit Management:**
+    *   Add new habits with optional descriptions and categories.
+    *   Edit existing habit details (name, description, category).
+    *   Delete habits (including associated logs and reminders).
+*   **Tracking & Viewing:**
+    *   Mark habits as 'done' for the current day (via command with name, or interactive keyboard).
+    *   View a summary of today's habit statuses with interactive 'done' buttons.
+    *   View paginated history of habit completions.
+    *   View completion statistics (completion rate, current streak, max streak) over the last 30 days.
+*   **Reminders:**
+    *   Set daily reminders for specific habits at user-defined times.
+    *   Manage (view and delete) active reminders.
+    *   Reminders persist across bot restarts.
+*   **Channel Membership Enforcement (Optional):**
+    *   Require users to be members of specified Telegram channels/groups before using the bot.
+    *   Efficient caching of membership status to minimize API calls.
+    *   `/refresh_membership` command for users to re-check their status after joining.
+*   **User Experience:**
+    *   Interactive conversations for adding, editing, and deleting habits/reminders.
+    *   Inline keyboards for easy interaction.
+    *   Localized interface (currently supports Persian/Farsi).
+    *   Graceful error handling with user-friendly messages.
+*   **Technical:**
+    *   Fully asynchronous using `asyncio`, `python-telegram-bot (v20+)`, and `aiosqlite`.
+    *   Modular structure (handlers, database, utils, config).
+    *   SQLite database backend with WAL (Write-Ahead Logging) enabled for better concurrency.
+    *   Configuration via environment variables (`.env` file).
+    *   Developer notifications for errors.
+    *   Graceful shutdown handling.
 
-## Requirements
+## Prerequisites
 
-*   Python 3.9+
-*   pip (Python package installer)
-*   Telegram Bot Token (get one from @BotFather on Telegram)
+*   Python 3.9 or higher (due to usage of `zoneinfo`)
+*   A Telegram Bot Token obtained from [@BotFather](https://t.me/BotFather)
+*   Optionally:
+    *   One or more Telegram Channel/Group IDs (numeric or `@username`) if using the membership requirement feature.
+    *   Your Telegram User ID (for developer error notifications).
 
-## Setup and Installation
+## Installation & Setup
 
 1.  **Clone the Repository:**
     ```bash
-    git clone <repository-url>
-    cd <repository-directory>
+    git clone https://github.com/your-username/habit-tracker-bot.git # Replace with your repo URL
+    cd habit-tracker-bot
     ```
 
 2.  **Create a Virtual Environment:**
-    (Recommended to isolate dependencies)
     ```bash
-    # On Linux/macOS
-    python3 -m venv venv
-    source venv/bin/activate
-
-    # On Windows
     python -m venv venv
-    .\venv\Scripts\activate
     ```
 
-3.  **Install Dependencies:**
+3.  **Activate the Virtual Environment:**
+    *   On Windows:
+        ```bash
+        .\venv\Scripts\activate
+        ```
+    *   On macOS/Linux:
+        ```bash
+        source venv/bin/activate
+        ```
+
+4.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Configure Environment Variables:**
-    Create a file named `.env` in the root project directory. You can copy `.env.example` if one exists, or create it from scratch. Add the following variables:
+5.  **Configure Environment Variables:**
+    *   Create a file named `.env` in the project's root directory.
+    *   Copy the contents of `.env.example` (see below) into `.env`.
+    *   Fill in the required values, especially `BOT_TOKEN`.
 
+    **.env.example:**
     ```dotenv
-    # --- REQUIRED ---
-    # Get this from @BotFather on Telegram
-    BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
+    # REQUIRED: Get this from @BotFather on Telegram
+    BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
 
-    # --- RECOMMENDED / DEFAULTS ---
-    # Timezone for scheduling reminders and determining 'today'
-    # Use a valid IANA timezone name (e.g., Asia/Tehran, Europe/London, UTC)
-    # List: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-    USER_TIMEZONE="Asia/Tehran"
+    # Optional: Database file path (default: habits_data.db)
+    # DATABASE_FILE=habits_data.db
 
-    # Path to the SQLite database file
-    DATABASE_FILE="habits_data.db"
+    # Optional: Timezone for date calculations (default: UTC). Use IANA timezone names (e.g., Europe/London, America/New_York)
+    # See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+    # USER_TIMEZONE=Asia/Tehran
 
-    # --- OPTIONAL ---
-    # Your Telegram User ID (integer) to receive detailed error reports
-    # DEVELOPER_CHAT_ID=123456789
+    # Optional: Your Telegram User ID to receive error notifications
+    # DEVELOPER_CHAT_ID=YOUR_TELEGRAM_USER_ID
 
-    # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    # LOG_LEVEL="INFO"
+    # Optional: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) (default: INFO)
+    # LOG_LEVEL=INFO
 
-    # Set to "1" to delete and re-initialize the database on startup (USE WITH CAUTION!)
-    # RESET_DB_ON_START="0"
+    # Optional: Set to "1" to delete and recreate the database on startup (USE WITH CAUTION!)
+    # RESET_DB_ON_START=0
+
+    # --- Optional Channel Membership Settings ---
+    # Comma-separated list of channel/group IDs (numeric or @username) users must join
+    # REQUIRED_CHANNEL_IDS=@mychannel, -1001234567890
+    # How long (in seconds) to cache a user's membership status (default: 300)
+    # CHANNEL_MEMBERSHIP_CACHE_TTL=300
     ```
-    **Important:** Make sure to replace `"YOUR_TELEGRAM_BOT_TOKEN"` with the actual token you received from BotFather. Adjust `USER_TIMEZONE` to your local timezone.
 
 ## Running the Bot
 
-Once the setup is complete, run the main script:
+1.  Make sure your virtual environment is activated.
+2.  Run the main script:
+    ```bash
+    python main.py
+    ```
+3.  The bot should start polling for updates. You can interact with it on Telegram.
+4.  To stop the bot gracefully, press `Ctrl+C`.
 
-```bash
-python main.py
+## Usage (Bot Commands)
+
+Interact with the bot on Telegram using these commands:
+
+*   `/start` - Shows a welcome message and command list.
+*   `/help` - Displays the list of available commands.
+*   `/add_habit` - Starts a conversation to add a new habit.
+*   `/edit_habit` - Starts a conversation to edit an existing habit's name, description, or category.
+*   `/today` - Shows the status of your habits for the current day with buttons to mark them done.
+*   `/done [habit name]` - Marks a specific habit as done for today. If no name is provided, shows a list to choose from.
+*   `/history` - Displays your recent habit activity log (paginated).
+*   `/stats` - Shows your habit completion statistics (streaks, rate) for the last 30 days.
+*   `/set_reminder` - Starts a conversation to set or update a daily reminder for a habit.
+*   `/manage_reminders` - Shows your active reminders with buttons to delete them.
+*   `/delete_habit` - Starts a conversation to permanently delete a habit and its data.
+*   `/refresh_membership` - Re-checks your membership status in required channels (if enabled).
+*   `/cancel` - Cancels any ongoing conversation (like adding or deleting a habit).
+
+**Note:** You can use `/skip` during conversations (add/edit habit) to skip optional fields like description or category.
+
+## Project Structure
 
 
-The bot should start, connect to Telegram, initialize the database (if needed), schedule any existing reminders, and begin polling for updates. You can stop the bot by pressing Ctrl+C.
+habit-tracker-bot/
+├── .env # Local environment variables (ignored by git)
+├── .env.example # Example environment file
+├── .gitignore # Specifies intentionally untracked files that Git should ignore
+├── config.py # Loads configuration from environment variables
+├── database/
+│ ├── init.py # Exports database functions
+│ └── db_manager.py # Handles all SQLite database interactions (CRUD operations)
+├── handlers/
+│ ├── init.py # Exports handler modules/functions
+│ ├── add_habit.py # Conversation handler for adding habits
+│ ├── edit_habit.py # Conversation handler for editing habits
+│ ├── manage_habits.py# Conversation handler for deleting habits
+│ ├── mark_done.py # Handlers for /done command and 'Done' buttons
+│ ├── reminders.py # Handlers for setting/managing reminders and job execution
+│ ├── start.py # Handlers for /start, /help, /refresh_membership
+│ ├── view_habits.py # Handlers for /today, /history, /stats
+│ └── errors.py # Global error handler
+├── main.py # Main application entry point, sets up PTB and registers handlers
+├── requirements.txt # Python package dependencies
+├── utils/
+│ ├── init.py # Exports utility modules/functions
+│ ├── checks.py # Membership checking logic and decorator
+│ ├── constants.py # Callback data prefixes, conversation states, command names
+│ ├── helpers.py # Utility functions (date/time parsing, formatting, escaping)
+│ ├── keyboards.py # Functions to generate inline keyboards
+│ └── localization.py # User-facing strings (currently Persian/Farsi)
+└── venv/ # Virtual environment directory (ignored by git)
 
-Usage
+## Contributing
 
-Interact with the bot on Telegram using the following commands:
+Contributions are welcome! Please feel free to open an issue to discuss bugs or feature requests, or submit a pull request.
 
-/start - Display welcome message and help.
+## License
 
-/help - Show the list of available commands.
-
-/add_habit - Start the process to add a new habit.
-
-/today - Show the status of your habits for today with "Mark Done" buttons.
-
-/done [habit_name] - Mark a specific habit as done for today (case-insensitive).
-
-/history - Display recent habit completion history.
-
-/stats - Show habit completion statistics for the last 30 days.
-
-/set_reminder - Start the process to set or update a daily reminder for a habit.
-
-/manage_reminders - View your active reminders with options to delete them.
-
-/delete_habit - Start the process to permanently delete a habit and its data.
-
-/cancel - Cancel the current multi-step operation (like adding/deleting a habit).
-
-Project Structure
-.
-├── database/             # Database interaction logic (schema, queries)
-│   ├── __init__.py
-│   └── db_manager.py
-├── handlers/             # Telegram update handlers (commands, conversations, callbacks)
-│   ├── __init__.py
-│   ├── add_habit.py
-│   ├── errors.py
-│   ├── manage_habits.py
-│   ├── mark_done.py
-│   ├── reminders.py
-│   ├── start.py
-│   └── view_habits.py
-├── utils/                # Helper functions, constants, localization, keyboards
-│   ├── __init__.py
-│   ├── constants.py
-│   ├── helpers.py
-│   ├── keyboards.py
-│   └── localization.py   # User-facing strings (Persian)
-├── .env                  # Environment variables (contains secrets - DO NOT COMMIT)
-├── .gitignore            # Specifies intentionally untracked files
-├── config.py             # Loads configuration and sets up logging
-├── main.py               # Main application entry point, setup, and run
-└── requirements.txt      # Project dependencies
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (you would need to create a `LICENSE` file with the MIT license text).
 IGNORE_WHEN_COPYING_START
 content_copy
 download
 Use code with caution.
 IGNORE_WHEN_COPYING_END
-Contributing
 
-Contributions are welcome! If you find a bug or have a feature request, please open an issue. If you'd like to contribute code, please fork the repository and submit a pull request.
+Next Steps:
 
-License
+Create .env.example: Copy the example content provided above into a file named .env.example in your project root.
 
-This project is licensed under the MIT License - see the LICENSE file for details (if a LICENSE file is present).
+Create LICENSE file: If you choose the MIT license (or another), create a file named LICENSE and paste the full license text into it.
 
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-IGNORE_WHEN_COPYING_END
+Replace https://github.com/your-username/habit-tracker-bot.git in the README with the actual URL of your repository.
+
+Commit the README.md, .env.example, and LICENSE files to your repository.
