@@ -119,7 +119,7 @@ The bot will initialize, connect to the database, schedule any existing reminder
 
 ## Getting Started (Quick Start)
 
-Clone the repository: git clone <repo-url> && cd <repo-dir>
+Clone the repository: ```bash git clone <repo-url> && cd <repo-dir> ```
 
 Install dependencies: pip install -r requirements.txt
 
