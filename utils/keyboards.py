@@ -1,52 +1,33 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from typing import List, Tuple, Optional
-from . import localization as lang
-from . import constants as c
+from . import localization as lang, constants as c
 
 def today_habits_keyboard(habits: List[Tuple[int, str, str]]) -> InlineKeyboardMarkup:
     """Keyboard for /today: mark pending habits done."""
-    kbd = []
-    for hid, name, status in habits:
-        if status == 'pending':
-            btn_text = f"{name} ({lang.BUTTON_MARK_DONE})"
-            cb = f"{c.CALLBACK_MARK_DONE}{hid}"
-        else:
-            btn_text = f"✅ {name}"
-            cb = f"{c.CALLBACK_NOOP}{hid}" # Non-interactive
-        kbd.append([InlineKeyboardButton(btn_text, callback_data=cb)])
+    kbd = [[InlineKeyboardButton(f"{'✅ ' if status == 'done' else ''}{name}{f' ({lang.BUTTON_MARK_DONE})' if status == 'pending' else ''}",
+                               callback_data=f"{c.CALLBACK_MARK_DONE if status == 'pending' else c.CALLBACK_NOOP}{hid}")]
+           for hid, name, status in habits]
     return InlineKeyboardMarkup(kbd)
 
 def reminder_management_keyboard(reminders: List[Tuple[int, str, str]]) -> InlineKeyboardMarkup:
     """Keyboard for /manage_reminders: delete buttons."""
-    kbd = []
-    for hid, name, time_str in reminders:
-        btn_text = f"{name} ({time_str}) - {lang.BUTTON_DELETE_REMINDER}"
-        cb = f"{c.CALLBACK_DELETE_REMINDER}{hid}"
-        kbd.append([InlineKeyboardButton(btn_text, callback_data=cb)])
+    kbd = [[InlineKeyboardButton(f"{name} ({time_str}) - {lang.BUTTON_DELETE_REMINDER}", callback_data=f"{c.CALLBACK_DELETE_REMINDER}{hid}")]
+           for hid, name, time_str in reminders]
     return InlineKeyboardMarkup(kbd)
 
 def select_habit_keyboard(habits: List[Tuple[int, str, Optional[str], Optional[str]]], cb_prefix: str) -> List[List[InlineKeyboardButton]]:
     """Generic habit selection keyboard rows."""
-    kbd_rows = []
-    for hid, name, _, _ in habits:
-        kbd_rows.append([InlineKeyboardButton(name, callback_data=f"{cb_prefix}{hid}")])
-    return kbd_rows
+    return [[InlineKeyboardButton(name, callback_data=f"{cb_prefix}{hid}")] for hid, name, _, _ in habits]
 
 def yes_no_keyboard(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
     """Simple Yes/No confirmation keyboard."""
-    kbd = [[ InlineKeyboardButton(lang.BUTTON_YES, callback_data=yes_cb),
-             InlineKeyboardButton(lang.BUTTON_NO, callback_data=no_cb) ]]
-    return InlineKeyboardMarkup(kbd)
+    return InlineKeyboardMarkup([[InlineKeyboardButton(lang.BUTTON_YES, callback_data=yes_cb), InlineKeyboardButton(lang.BUTTON_NO, callback_data=no_cb)]])
 
 def history_pagination_keyboard(offset: int, total: int, limit: int) -> Optional[InlineKeyboardMarkup]:
     """Pagination keyboard for /history."""
     btns = []
-    if offset > 0: # Previous button
-        prev_offset = max(0, offset - limit)
-        btns.append(InlineKeyboardButton(lang.BUTTON_PREVIOUS, callback_data=f"{c.CALLBACK_HISTORY_PAGE}{prev_offset}"))
-    if offset + limit < total: # Next button
-        next_offset = offset + limit
-        btns.append(InlineKeyboardButton(lang.BUTTON_NEXT, callback_data=f"{c.CALLBACK_HISTORY_PAGE}{next_offset}"))
+    if offset > 0: btns.append(InlineKeyboardButton(lang.BUTTON_PREVIOUS, callback_data=f"{c.CALLBACK_HISTORY_PAGE}{max(0, offset - limit)}"))
+    if offset + limit < total: btns.append(InlineKeyboardButton(lang.BUTTON_NEXT, callback_data=f"{c.CALLBACK_HISTORY_PAGE}{offset + limit}"))
     return InlineKeyboardMarkup([btns]) if btns else None
 
 def edit_habit_field_keyboard(habit_id: int) -> InlineKeyboardMarkup:

@@ -1,36 +1,30 @@
-# Environments & Secrets (NEVER commit .env)
+# Environments & Secrets
 .env
 venv/
 .venv/
 env/
-
-# Python cache files
+# Python cache
 *.pyc
 __pycache__/
 *.pyo
 *.pyd
-
-# Database file (contains user data)
+# Database (user data)
 *.db
 *.db-journal*
 *.sqlite
 *.sqlite3
-
-# SQLite Write-Ahead Logging files
+# SQLite WAL files
 *-wal
 *-shm
-
-# OS generated files
+# OS generated
 .DS_Store
 Thumbs.db
-
-# IDE files (optional, adjust based on your editor)
+# IDE files (optional)
 .idea/
 .vscode/
 *.sublime-project
 *.sublime-workspace
-
-# Distribution / Build files (if you add them later)
+# Build files (optional)
 dist/
 build/
 *.egg-info/
