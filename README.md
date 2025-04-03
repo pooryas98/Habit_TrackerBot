@@ -181,17 +181,23 @@ Fork the repository on GitHub.
 
 Create a new branch for your feature or bug fix:
 
+```bash
 git checkout -b feature/your-feature-name
+```
 
 Make your changes. Adhere to the existing code style (PEP 8, type hints, async/await).
 
 Commit your changes:
 
+```bash
 git commit -m "feat: Add feature X" -m "Detailed description of changes."
+```
 
 Push to your branch:
 
+```bash
 git push origin feature/your-feature-name
+```
 
 Open a Pull Request on the original repository, describing your changes clearly.
 
