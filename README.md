@@ -113,7 +113,7 @@ Once installed and configured, run the bot using:
 
 ```bash
 python main.py
-
+```
 
 The bot will initialize, connect to the database, schedule any existing reminders, and start polling for updates from Telegram. Press Ctrl+C to stop the bot gracefully.
 
