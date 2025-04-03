@@ -117,7 +117,7 @@ python main.py
 
 The bot will initialize, connect to the database, schedule any existing reminders, and start polling for updates from Telegram. Press Ctrl+C to stop the bot gracefully.
 
-Getting Started (Quick Start)
+## Getting Started (Quick Start)
 
 Clone the repository: git clone <repo-url> && cd <repo-dir>
 
@@ -129,11 +129,11 @@ Run the bot: python main.py
 
 Open Telegram and talk to your bot! Start with /start.
 
-Usage
+## Usage
 
 Interact with the bot using the commands below within your Telegram chat.
 
-Commands
+## Commands
 
 /start: Welcome message and initializes user data.
 
@@ -165,15 +165,15 @@ With habit name (e.g., /done Exercise): Marks the specified habit as done for to
 
 /refresh_membership: (If channel membership is enabled) Clears the cache and re-checks your membership in the required channels.
 
-Conversations
+## Conversations
 
 Several commands (/add_habit, /edit_habit, /delete_habit, /set_reminder) trigger multi-step conversations. Follow the bot's prompts. You can use /cancel at any time to exit the conversation. When prompted for optional information (like description or category), you can type /skip (or the localized equivalent) to omit it.
 
-Localization
+## Localization
 
 The bot's user interface text is managed in utils/localization.py. Currently, the provided localization is in Persian (Farsi). You can adapt this file to support other languages.
 
-Contributing
+## Contributing
 
 Contributions are welcome! Please follow these steps:
 
@@ -195,10 +195,10 @@ git push origin feature/your-feature-name
 
 Open a Pull Request on the original repository, describing your changes clearly.
 
-License
+## License
 
 No explicit license file was found in the provided codebase. Please assume the code is under the repository owner's copyright unless otherwise stated. If you plan to use or distribute this code, consider adding a license file (e.g., MIT, GPL) or contacting the author.
 
-Support
+## Support
 
 If you encounter issues or have questions, please use the GitHub Issues section of the repository.
