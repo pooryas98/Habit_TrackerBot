@@ -1,30 +1,53 @@
 # Environments & Secrets
 .env
+*.env.*
+!.env.example
+
+# Virtual envs
 venv/
 .venv/
 env/
-# Python cache
-*.pyc
+
+# Python caches/artifacts
+*.py[cod]
+*.so
 __pycache__/
-*.pyo
-*.pyd
-# Database (user data)
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg
+wheels/
+*.tar.gz
+*.whl
+
+# Database (matches config.py)
 *.db
 *.db-journal*
-*.sqlite
-*.sqlite3
-# SQLite WAL files
+*.sqlite*
 *-wal
 *-shm
+
 # OS generated
 .DS_Store
 Thumbs.db
-# IDE files (optional)
+
+# IDE config
 .idea/
 .vscode/
-*.sublime-project
-*.sublime-workspace
-# Build files (optional)
-dist/
-build/
-*.egg-info/
+*.sublime-*
+nbproject/
+
+# Runtime/Dev files
+*.log
+*.coverage
+coverage.xml
+htmlcov/
+*.prof
+.ipynb_checkpoints
+celerybeat-schedule.*

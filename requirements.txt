@@ -1,11 +1,4 @@
-# Core Telegram bot library with JobQueue support
-python-telegram-bot[job-queue]>=22.0
-
-# Asynchronous SQLite driver
-aiosqlite
-
-# Timezone handling
-pytz
-
-# Optional: Load environment variables from .env file
-python-dotenv
+python-telegram-bot[job-queue]>=22.0,<23.0
+aiosqlite>=0.17.0,<0.21.0
+pytz>=2023.3
+python-dotenv>=1.0.0,<2.0.0
