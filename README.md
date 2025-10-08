@@ -26,7 +26,7 @@ A feature-rich Telegram bot built with Python and the python-telegram-bot librar
 
 1. **Clone the repository:**
    ```bash
-   git clone [<repository-url>](https://github.com/pooryas98/Habit_TrackerBot.git)
+   git clone https://github.com/pooryas98/Habit_TrackerBot.git
    cd Habit_TrackerBot
    ```
 
