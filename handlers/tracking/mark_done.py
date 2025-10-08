@@ -2,20 +2,23 @@ import logging
 from telegram import Update,InlineKeyboardMarkup,error as tg_error
 from telegram.ext import Application,CommandHandler,CallbackContext,CallbackQueryHandler
 from typing import Tuple,Optional
-from database import find_habit_by_name,mark_habit_done_db,get_user_habits,get_habit_name_by_id
+from database import DatabaseService
 from utils import localization as lang,constants as c,keyboards,helpers
 from handlers.common.membership import require_membership
 from .view import _today_msg # Assumes _today_msg generates the dict for reply_text
 
 log=logging.getLogger(__name__)
 
-async def _mark(uid: int, hid: int) -> Tuple[str, Optional[str]]:
+async def _mark(ctx: CallbackContext, uid: int, hid: int) -> Tuple[str, Optional[str]]:
 	"""Core: mark habit done. Returns status & name."""
 	try:
-		stat=await mark_habit_done_db(uid,hid,helpers.get_today_date())
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		stat = await db_service.mark_habit_done(uid, hid, helpers.get_today_date())
 		hname=None
 		if stat!="error":
-			hname=await get_habit_name_by_id(hid)
+			hname = await db_service.get_habit_name_by_id(hid)
 			if hname is None and stat!="already_done": log.warning(f"_mark: h:{hid} done but name miss u:{uid}."); return "not_found",None
 		return stat,hname
 	except ConnectionError: return "error",None
@@ -27,12 +30,15 @@ async def done_cmd(upd: Update, ctx: CallbackContext) -> None:
 	if not u or not m: return
 	if ctx.args:
 		q_name=" ".join(ctx.args).strip()
-		if not q_name: await m.reply_text(f"{lang.PROMPT_MARK_DONE_SELECT}\n{lang.EXAMPLE_MARK_DONE}"); return
+		if not q_name: await m.reply_text(f"{lang.PROMPT_MARK_DONE_SELECT}\\n{lang.EXAMPLE_MARK_DONE}"); return
 		log.debug(f"U {u.id} mark done by name: '{q_name}'")
 		try:
-			info=await find_habit_by_name(u.id,q_name)
+			# Get the database service from context
+			db_service: DatabaseService = ctx.bot_data['db_service']
+			# Use the new service method
+			info = await db_service.find_habit_by_name(u.id, q_name)
 			if not info: await m.reply_text(lang.ERR_HABIT_NOT_FOUND.format(habit_name=helpers.escape_html(q_name))); return
-			hid,db_name=info; res,act_name=await _mark(u.id,hid)
+			hid,db_name=info; res,act_name=await _mark(ctx, u.id,hid)
 			dname=helpers.escape_html(act_name or db_name)
 			msgs={"success":lang.CONFIRM_HABIT_MARKED_DONE,"already_done":lang.ERR_HABIT_ALREADY_DONE,"not_found":lang.ERR_HABIT_NOT_FOUND_GENERIC,"error":lang.ERR_MARK_DONE_FAILED}
 			await m.reply_text(msgs[res].format(habit_name=dname))
@@ -41,7 +47,10 @@ async def done_cmd(upd: Update, ctx: CallbackContext) -> None:
 	else: # No args, show keyboard
 		log.debug(f"U {u.id} /done (no args), show kbd.")
 		try:
-			habits=await get_user_habits(u.id)
+			# Get the database service from context
+			db_service: DatabaseService = ctx.bot_data['db_service']
+			# Use the new service method
+			habits = await db_service.get_user_habits(u.id)
 			if not habits: await m.reply_text(lang.MSG_NO_HABITS_TO_MARK_DONE); return
 			kbd=keyboards.select_habit_keyboard(habits,c.CALLBACK_SELECT_HABIT_DONE)
 			await m.reply_text(lang.PROMPT_MARK_DONE_SELECT,reply_markup=InlineKeyboardMarkup(kbd))
@@ -58,7 +67,7 @@ async def done_btn(upd: Update, ctx: CallbackContext) -> None:
 		if not q.data.startswith(c.CALLBACK_MARK_DONE): raise ValueError("Invalid done cb")
 		hid=int(q.data.split('_',1)[1])
 		log.debug(f"U {u.id} press mark done btn h:{hid}")
-		res,hname=await _mark(u.id,hid)
+		res,hname=await _mark(ctx, u.id,hid)
 		safe_name=helpers.escape_html(hname or lang.DEFAULT_HABIT_NAME)
 		chat_id, msg_id = q.message.chat.id, q.message.message_id
 		if res=="success":
@@ -83,7 +92,7 @@ async def done_sel(upd: Update, ctx: CallbackContext) -> None:
 		if not q.data.startswith(c.CALLBACK_SELECT_HABIT_DONE): raise ValueError("Invalid done_sel cb")
 		hid=int(q.data.split('_',1)[1])
 		log.debug(f"U {u.id} sel h:{hid} from /done kbd.")
-		res,hname=await _mark(u.id,hid)
+		res,hname=await _mark(ctx, u.id,hid)
 		safe_name=helpers.escape_html(hname or lang.DEFAULT_HABIT_NAME)
 		msgs={"success":lang.CONFIRM_HABIT_MARKED_DONE,"already_done":lang.ERR_HABIT_ALREADY_DONE,"not_found":lang.ERR_HABIT_NOT_FOUND_GENERIC,"error":lang.ERR_MARK_DONE_FAILED}
 		final_msg=msgs[res].format(habit_name=safe_name)
@@ -96,7 +105,7 @@ async def _refresh_today(ctx: CallbackContext, chat_id: int, msg_id: int, uid: i
 	"""Helper: refresh /today msg."""
 	log.debug(f"Refresh /today msg (C:{chat_id}, M:{msg_id}) u:{uid}")
 	try:
-		content=await _today_msg(uid)
+		content=await _today_msg(ctx, uid)
 		await ctx.bot.edit_message_text(chat_id=chat_id,message_id=msg_id,**content)
 		log.debug(f"Edited /today msg {msg_id}.")
 	except ConnectionError: log.error(f"DB err _refresh_today u:{uid}.")

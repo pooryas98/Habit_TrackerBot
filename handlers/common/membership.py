@@ -1,4 +1,5 @@
-import logging,time,functools,asyncio,config
+import logging,time,functools,asyncio
+from config import settings
 from typing import Optional,Dict,Any,Callable,Coroutine
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.constants import ChatMemberStatus
@@ -12,14 +13,14 @@ VALID_STS={ChatMemberStatus.MEMBER,ChatMemberStatus.ADMINISTRATOR,ChatMemberStat
 CONV_ENTRIES={"add_ask_name","edit_start_cmd","sel_habit_del_cmd","ask_habit","start","list_cmd"} # Incl conv entries & list_cmd
 
 async def check_memb(upd: Update, ctx: CallbackContext) -> bool:
-	if not config.REQUIRED_CHANNEL_IDS: return True
+	if not settings.required_channel_ids_list: return True
 	u=upd.effective_user;
 	if not u: log.warning("check_memb called no user."); return False
 	uid=u.id; t=time.time(); data=ctx.user_data if ctx.user_data else {}
-	for cid in config.REQUIRED_CHANNEL_IDS:
+	for cid in settings.required_channel_ids_list:
 		ck=f"{CACHE_PFX}{cid}"; cached:Optional[Dict[str,Any]]=data.get(ck); member:Optional[bool]=None
 		if cached and isinstance(cached,dict):
-			if (t-cached.get("t",0)<config.CHANNEL_MEMBERSHIP_CACHE_TTL):
+			if (t-cached.get("t",0)<settings.channel_membership_cache_ttl):
 				member=cached.get("s"); err=cached.get("e")
 				log.debug(f"Cache HIT u:{uid} ch:'{cid}': M={member}, E={err}")
 			else: log.debug(f"Cache EXP u:{uid} ch:'{cid}'.")
@@ -47,7 +48,7 @@ def require_membership(h_func:Callable[[Update,CallbackContext],Coroutine]):
 		else:
 			log.info(f"@require_m FAIL u:{u.id} h:'{fname}'. Block.")
 			kbd=[]
-			for i,cid in enumerate(config.REQUIRED_CHANNEL_IDS):
+			for i,cid in enumerate(settings.required_channel_ids_list):
 				link=f"https://t.me/{cid[1:]}" if isinstance(cid,str) and cid.startswith('@') else None
 				if not link and isinstance(cid,int): log.warning(f"Need @username for ch ID {cid}."); continue
 				if link: kbd.append([InlineKeyboardButton(f"{lang.BUTTON_JOIN_CHANNEL} #{i+1}",url=link)])
@@ -65,7 +66,7 @@ async def refresh_cmd(upd: Update, ctx: CallbackContext) -> None:
 	u=upd.effective_user; m=upd.effective_message
 	if not u or not m: return
 	uid=u.id; data=ctx.user_data if ctx.user_data is not None else {}
-	if not config.REQUIRED_CHANNEL_IDS: await m.reply_text(lang.MSG_MEMBERSHIP_REFRESH_DISABLED); return
+	if not settings.required_channel_ids_list: await m.reply_text(lang.MSG_MEMBERSHIP_REFRESH_DISABLED); return
 	log.info(f"U {uid} init /refresh. Clear cache.")
 	keys_del=[k for k in data if isinstance(k,str) and k.startswith(CACHE_PFX)]
 	for k in keys_del: del data[k]
@@ -77,7 +78,7 @@ async def refresh_cmd(upd: Update, ctx: CallbackContext) -> None:
 		if is_member: await m.reply_text(lang.MSG_MEMBERSHIP_REFRESHED_OK); log.info(f"Memb refresh OK u:{uid}.")
 		else:
 			kbd=[]
-			for i,cid in enumerate(config.REQUIRED_CHANNEL_IDS):
+			for i,cid in enumerate(settings.required_channel_ids_list):
 				link=f"https://t.me/{cid[1:]}" if isinstance(cid,str) and cid.startswith('@') else None
 				if link: kbd.append([InlineKeyboardButton(f"{lang.BUTTON_JOIN_CHANNEL} #{i+1}",url=link)])
 			markup=InlineKeyboardMarkup(kbd) if kbd else None

@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 from telegram import Update,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ConversationHandler,CallbackContext,CallbackQueryHandler
-from database import get_user_habits,get_habit_name_by_id,update_habit_db
+from database import DatabaseService
 from utils import localization as lang,constants as c,keyboards,helpers
 from handlers.common.membership import require_membership
 
@@ -25,7 +25,10 @@ async def start(upd: Update, ctx: CallbackContext) -> int:
 	user=upd.effective_user; m=upd.effective_message
 	if not user or not m: return ConversationHandler.END
 	try:
-		habits=await get_user_habits(user.id)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		habits = await db_service.get_user_habits(user.id)
 		if not habits: await m.reply_text(lang.MSG_NO_HABITS_TO_EDIT); return ConversationHandler.END
 		kbd=keyboards.select_habit_keyboard(habits,c.CALLBACK_SELECT_HABIT_EDIT)
 		await m.reply_text(lang.PROMPT_SELECT_HABIT_TO_EDIT,reply_markup=InlineKeyboardMarkup(kbd))
@@ -38,9 +41,12 @@ async def sel_h_cb(upd: Update, ctx: CallbackContext) -> int:
 	if not q or not q.data or not q.message or ud is None: return ConversationHandler.END
 	await q.answer()
 	try:
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
 		if not q.data.startswith(c.CALLBACK_SELECT_HABIT_EDIT): raise ValueError(f"Invalid edit cb: {q.data}")
 		hid=int(q.data.split('_',1)[1])
-		hname=await get_habit_name_by_id(hid)
+		hname = await db_service.get_habit_name_by_id(hid)
 		if not hname: await q.edit_message_text(lang.ERR_HABIT_NOT_FOUND_GENERIC); _clr(ctx); return ConversationHandler.END
 		ud['edit_hid']=hid; ud['edit_hname']=hname
 		log.debug(f"U {q.from_user.id} sel h '{hname}' ({hid}) edit.")
@@ -88,7 +94,10 @@ async def recv_v(upd: Update, ctx: CallbackContext) -> int:
 
 	log.debug(f"Update h:{hid}, fld:'{fld}' val:'{str(new_val)[:40]}...' u:{user.id}")
 	try:
-		success=await update_habit_db(hid,user.id,fld,new_val)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		success = await db_service.update_habit(hid, user.id, fld, new_val)
 		if success:
 			final_name=new_val if fld=='name' else orig_name
 			await m.reply_text(lang.CONFIRM_HABIT_UPDATED.format(habit_name=helpers.escape_html(final_name)))

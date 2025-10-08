@@ -1,7 +1,7 @@
 import logging
 from telegram import Update
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ConversationHandler,CallbackContext
-from database import add_habit_db
+from database import DatabaseService
 from utils import localization as lang,constants as c,helpers
 from handlers.common.membership import require_membership
 
@@ -49,7 +49,10 @@ async def recv_c(upd: Update, ctx: CallbackContext) -> int:
 	cat=None if is_skip else cat_raw
 	log.debug(f"Recv cat: {'SKIP' if is_skip else cat}")
 	try:
-		hid=await add_habit_db(user.id,hname,desc,cat)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		hid = await db_service.add_habit(user.id, hname, desc, cat)
 		msg=lang.CONFIRM_HABIT_ADDED.format(habit_name=helpers.escape_html(hname)) if hid else lang.ERR_HABIT_ADD_FAILED
 		await m.reply_text(msg)
 	except ConnectionError: await m.reply_text(lang.ERR_DATABASE_CONNECTION)

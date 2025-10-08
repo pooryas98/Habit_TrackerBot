@@ -1,4 +1,5 @@
-import logging,html,json,traceback,config
+import logging,html,json,traceback
+from config import settings
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -22,9 +23,9 @@ async def handle_error(upd: object, ctx: CallbackContext) -> None:
 	e_tb=html.escape(tb_s[-1200:]) # Shorter traceback
 	dev_msg=(f"⚠️ <b>Exc</b> ⚠️\n<b>Err:</b><pre>{e_err}</pre>\n<b>Upd:</b><pre>{e_upd}</pre>\n"
 			   f"<b>Ctx:</b><pre>{e_ctx}</pre>\n<b>TB:</b><pre>{e_tb}</pre>")
-	if config.DEVELOPER_CHAT_ID:
-		try: await ctx.bot.send_message(chat_id=config.DEVELOPER_CHAT_ID,text=dev_msg[:4096],parse_mode=ParseMode.HTML); log.debug(f"Err notify sent dev {config.DEVELOPER_CHAT_ID}.")
-		except TelegramError as e: log.error(f"Failed send err dev {config.DEVELOPER_CHAT_ID}: {e}. Orig err: {ctx.error}",exc_info=True)
+	if settings.developer_chat_id:
+		try: await ctx.bot.send_message(chat_id=settings.developer_chat_id,text=dev_msg[:4096],parse_mode=ParseMode.HTML); log.debug(f"Err notify sent dev {settings.developer_chat_id}.")
+		except TelegramError as e: log.error(f"Failed send err dev {settings.developer_chat_id}: {e}. Orig err: {ctx.error}",exc_info=True)
 		except Exception as e: log.error(f"Unexpected err sending notify: {e}. Orig err: {ctx.error}",exc_info=True)
 	if isinstance(upd,Update) and upd.effective_message:
 		try: await upd.effective_message.reply_text(lang.MSG_ERROR_GENERAL)

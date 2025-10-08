@@ -2,7 +2,7 @@ import logging
 from telegram import Update,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ConversationHandler,CallbackContext,CallbackQueryHandler,JobQueue
 from typing import cast,List,Tuple
-from database import get_user_habits,get_habit_name_by_id,add_or_update_reminder_db,get_user_reminders
+from database import DatabaseService
 from scheduling.reminder_scheduler import add_rem_job,rm_rem_job_by_hid
 from utils import localization as lang,constants as c,keyboards,helpers
 from handlers.common.membership import require_membership
@@ -18,7 +18,10 @@ async def ask_h(upd: Update,ctx:CallbackContext)->int:
 	user=upd.effective_user; m=upd.effective_message
 	if not user or not m: return ConversationHandler.END
 	try:
-		habits=await get_user_habits(user.id)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		habits = await db_service.get_user_habits(user.id)
 		if not habits: await m.reply_text(lang.MSG_NO_HABITS_FOR_REMINDER); return ConversationHandler.END
 		kbd=keyboards.select_habit_keyboard(habits,c.CALLBACK_SELECT_REMINDER_HABIT)
 		await m.reply_text(lang.PROMPT_SELECT_REMINDER_HABIT_LIST,reply_markup=InlineKeyboardMarkup(kbd))
@@ -31,9 +34,12 @@ async def sel_h_cb(upd: Update,ctx:CallbackContext)->int:
 	if not q or not q.data or not q.message or ud is None: return ConversationHandler.END
 	await q.answer()
 	try:
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
 		if not q.data.startswith(c.CALLBACK_SELECT_REMINDER_HABIT): raise ValueError("Invalid rem cb")
 		hid=int(q.data.split('_',1)[1])
-		hname=await get_habit_name_by_id(hid)
+		hname = await db_service.get_habit_name_by_id(hid)
 		if not hname: await q.edit_message_text(lang.ERR_HABIT_NOT_FOUND_GENERIC); _clr(ctx); return ConversationHandler.END
 		ud['rem_hid']=hid; ud['rem_hname']=hname
 		log.debug(f"U {q.from_user.id} sel h '{hname}'({hid}) rem.")
@@ -56,7 +62,10 @@ async def set_t_cb(upd: Update,ctx:CallbackContext)->int:
 		new_jname=await add_rem_job(jq=jq,uid=user.id,hid=hid,hname=hname,rem_time=ptime,cb_func=rem_cb)
 		if not new_jname: await m.reply_text(lang.ERR_REMINDER_SET_FAILED_SCHEDULE); raise RuntimeError("Failed schedule job")
 		job_ok=True; log.info(f"Sched/upd job: {new_jname}")
-		db_ok=await add_or_update_reminder_db(user.id,hid,ptime,new_jname)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		db_ok = await db_service.add_or_update_reminder(user.id, hid, ptime, new_jname)
 		if not db_ok: log.error(f"Failed save rem job {new_jname} DB. Rolling back."); await rm_rem_job_by_hid(hid,jq); await m.reply_text(lang.ERR_REMINDER_SET_FAILED_DB); raise RuntimeError("Failed save DB")
 		fmt_t=helpers.format_time_user_friendly(ptime)
 		await m.reply_text(lang.CONFIRM_REMINDER_SET.format(habit_name=helpers.escape_html(hname),time_str=fmt_t))
@@ -88,11 +97,14 @@ async def list_cmd(upd: Update, ctx: CallbackContext) -> None:
 	if not user or not m: return
 	log.info(f"U {user.id} req /manage_reminders")
 	try:
-		u_rems=await get_user_reminders(user.id)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		u_rems = await db_service.get_user_reminders(user.id)
 		if not u_rems: await m.reply_text(lang.MSG_NO_REMINDERS); return
 		kbd_data:List[Tuple[int,str,str]]=[]
 		for hid,rem_t,_jname in u_rems:
-			hname=await get_habit_name_by_id(hid)
+			hname = await db_service.get_habit_name_by_id(hid)
 			if hname: kbd_data.append((hid,hname,helpers.format_time_user_friendly(rem_t)))
 			else: log.warning(f"Rem for deleted h:{hid} (u:{user.id}). Skip.")
 		if not kbd_data: await m.reply_text(lang.MSG_NO_REMINDERS); return # Check again if all were deleted
@@ -109,7 +121,10 @@ async def del_rem_cb(upd: Update, ctx: CallbackContext) -> None:
 		if not q.data.startswith(c.CALLBACK_DELETE_REMINDER): raise ValueError("Invalid del rem cb")
 		hid=int(q.data.split('_',1)[1])
 		log.info(f"U {user.id} req del rem h:{hid}")
-		hname=await get_habit_name_by_id(hid) or lang.DEFAULT_HABIT_NAME
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		hname = await db_service.get_habit_name_by_id(hid) or lang.DEFAULT_HABIT_NAME
 		removed=await rm_rem_job_by_hid(hid,jq)
 		msg_key=lang.CONFIRM_REMINDER_DELETED if removed else lang.ERR_REMINDER_DELETE_FAILED
 		await q.edit_message_text(msg_key.format(habit_name=helpers.escape_html(hname)))

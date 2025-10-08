@@ -1,7 +1,7 @@
 import logging,datetime,aiosqlite
 from typing import Optional,Callable,Coroutine,Any
 from telegram.ext import JobQueue,Job
-from database import get_all_reminders,get_habit_name_by_id,remove_reminder_by_habit_id
+from database.service import DatabaseService
 from utils import constants as c
 
 log=logging.getLogger(__name__)
@@ -21,7 +21,9 @@ async def sched_all_rems(db_conn: aiosqlite.Connection, jq: JobQueue):
 	log.info("Scheduling reminders from DB...")
 	n_sched,n_skip_del,n_skip_time,n_fail=0,0,0,0
 	try:
-		all_rems=await get_all_reminders() # [(uid, hid, time, job_name_db)]
+		# Create DatabaseService with the provided connection
+		db_service = DatabaseService(db_conn)
+		all_rems = await db_service.get_all_reminders() # [(uid, hid, time, job_name_db)]
 		if not all_rems: log.info("No reminders in DB."); return
 		log.info(f"Found {len(all_rems)} reminders. Scheduling...")
 		try: from handlers.reminders.jobs import rem_cb
@@ -29,8 +31,8 @@ async def sched_all_rems(db_conn: aiosqlite.Connection, jq: JobQueue):
 		for uid,hid,rem_time,stored_jname in all_rems:
 			expected_jname=_jname(uid,hid)
 			try:
-				hname=await get_habit_name_by_id(hid)
-				if not hname: log.warning(f"Habit {hid} for rem (u:{uid}) missing. Skip & rm orphan."); n_skip_del+=1; await remove_reminder_by_habit_id(hid); _rm_job_by_name(jq,expected_jname); _rm_job_by_name(jq,stored_jname) if stored_jname and stored_jname!=expected_jname else None; continue
+				hname = await db_service.get_habit_name_by_id(hid)
+				if not hname: log.warning(f"Habit {hid} for rem (u:{uid}) missing. Skip & rm orphan."); n_skip_del+=1; await db_service.remove_reminder_by_habit_id(hid); _rm_job_by_name(jq,expected_jname); _rm_job_by_name(jq,stored_jname) if stored_jname and stored_jname!=expected_jname else None; continue
 			except (aiosqlite.Error,ConnectionError) as e: log.error(f"DB err check h:{hid} exist sched: {e}. Skip."); n_fail+=1; continue
 			_rm_job_by_name(jq,expected_jname) # Clean existing
 			if stored_jname and stored_jname!=expected_jname: log.warning(f"Stored jname '{stored_jname}'!=expected '{expected_jname}' h:{hid}. Removing both."); _rm_job_by_name(jq,stored_jname)
@@ -61,7 +63,12 @@ async def rm_rem_job_by_hid(hid: int, jq: JobQueue) -> bool:
 	"""Removes job from queue and DB. Returns True if DB entry found/removed."""
 	log.info(f"Attempt remove rem job/DB h:{hid}")
 	try:
-		job_name_db=await remove_reminder_by_habit_id(hid) # Handles DB
+		# Create DatabaseService with global connection
+		from database.connection import get_db_connection
+		conn = await get_db_connection()
+		db_service = DatabaseService(conn)
+		
+		job_name_db = await db_service.remove_reminder_by_habit_id(hid)
 		if job_name_db:
 			log.info(f"Rem h:{hid} rem DB. Job name:'{job_name_db}'. Attempt queue removal.")
 			job_removed_q=_rm_job_by_name(jq,job_name_db)

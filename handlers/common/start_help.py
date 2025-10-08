@@ -1,7 +1,7 @@
 import logging
 from telegram import Update
 from telegram.ext import Application,CommandHandler,CallbackContext
-from database import add_user_if_not_exists
+from database import DatabaseService
 from utils import localization as lang,constants as c
 from .membership import require_membership
 
@@ -12,7 +12,10 @@ async def start_cmd(upd: Update, ctx: CallbackContext) -> None:
 	usr=upd.effective_user; msg=upd.effective_message;
 	if not usr or not msg: log.warning("/start no user/msg."); return
 	try:
-		await add_user_if_not_exists(usr.id)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		await db_service.add_user_if_not_exists(usr.id)
 		log.info(f"User {usr.id} ({usr.username or 'NoUN'}) started.")
 		await msg.reply_text(lang.MSG_WELCOME.format(user_name=usr.first_name))
 		await help_cmd(upd,ctx) # Call help after welcome

@@ -5,20 +5,23 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 from typing import Dict,Any,List,Tuple,Optional
-from database import get_user_habits,get_todays_habit_statuses,get_habit_log,get_habit_log_count,get_completion_stats
+from database import DatabaseService
 from utils import localization as lang,constants as c,keyboards,helpers
 from handlers.common.membership import require_membership
 
 log = logging.getLogger(__name__)
 
-async def _today_msg(uid: int) -> Dict[str, Any]:
+async def _today_msg(ctx: CallbackContext, uid: int) -> Dict[str, Any]:
 	"""Generates content dict for /today."""
 	log.debug(f"Gen /today u:{uid}")
 	try:
 		today=helpers.get_today_date()
-		habits=await get_user_habits(uid)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		habits = await db_service.get_user_habits(uid)
 		if not habits: return {"text":lang.MSG_NO_HABITS_TODAY,"reply_markup":None,"parse_mode":ParseMode.HTML}
-		statuses=await get_todays_habit_statuses(uid,today)
+		statuses = await db_service.get_todays_habit_statuses(uid, today)
 		today_s=helpers.format_date_user_friendly(today)
 		txt=f"{lang.MSG_TODAY_HEADER.format(today_date=today_s)}\n\n"
 		kbd_data=[]
@@ -37,14 +40,17 @@ async def today_cmd(upd: Update, ctx: CallbackContext) -> None:
 	u=upd.effective_user; m=upd.effective_message
 	if not u or not m: return
 	log.info(f"U {u.id} req /today.")
-	await m.reply_text(**(await _today_msg(u.id)))
+	await m.reply_text(**(await _today_msg(ctx, u.id)))
 
-async def _hist_msg(uid: int, offset: int=0, limit: int=c.HISTORY_PAGE_LIMIT) -> Dict[str, Any]:
+async def _hist_msg(ctx: CallbackContext, uid: int, offset: int=0, limit: int=c.HISTORY_PAGE_LIMIT) -> Dict[str, Any]:
 	"""Generates content dict for /history page."""
 	log.debug(f"Gen /history u:{uid}, off={offset}, lim={limit}")
 	try:
-		entries=await get_habit_log(uid,limit=limit,offset=offset)
-		total=await get_habit_log_count(uid)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service methods
+		entries = await db_service.get_habit_log(uid, limit=limit, offset=offset)
+		total = await db_service.get_habit_log_count(uid)
 		if total==0: return {"text":lang.MSG_NO_HISTORY,"reply_markup":None,"parse_mode":ParseMode.HTML}
 		cur_pg=(offset//limit)+1; total_pg=math.ceil(total/limit)
 		txt=f"{lang.MSG_HISTORY_HEADER.format(page_num=cur_pg,total_pages=total_pg)}\n\n"
@@ -63,7 +69,7 @@ async def history_cmd(upd: Update, ctx: CallbackContext) -> None:
 	u=upd.effective_user; m=upd.effective_message
 	if not u or not m: return
 	log.info(f"U {u.id} req /history.")
-	await m.reply_text(**(await _hist_msg(u.id,offset=0)))
+	await m.reply_text(**(await _hist_msg(ctx, u.id,offset=0)))
 
 async def hist_page(upd: Update, ctx: CallbackContext) -> None:
 	q=upd.callback_query; u=upd.effective_user
@@ -74,7 +80,7 @@ async def hist_page(upd: Update, ctx: CallbackContext) -> None:
 		offset=int(q.data.split('_',1)[1])
 		if offset<0: offset=0
 		log.debug(f"U {u.id} req hist pg off {offset}")
-		content=await _hist_msg(u.id,offset=offset)
+		content=await _hist_msg(ctx, u.id,offset=offset)
 		await q.edit_message_text(**content)
 	except (IndexError,ValueError) as e: log.error(f"Err parse offset cb '{q.data}': {e}"); await q.answer(lang.ERR_GENERIC_CALLBACK,show_alert=True)
 	except BadRequest as e:
@@ -89,7 +95,10 @@ async def stats_cmd(upd: Update, ctx: CallbackContext) -> None:
 	log.info(f"U {u.id} req /stats.")
 	days=30
 	try:
-		stats_data=await get_completion_stats(u.id,days=days)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		stats_data = await db_service.get_completion_stats(u.id, days=days)
 		if not stats_data: await m.reply_text(lang.MSG_NO_STATS_DATA,parse_mode=ParseMode.MARKDOWN_V2); return
 		txt=lang.MSG_STATS_HEADER.format(days=days)+"\n\n"
 		sorted_stats=sorted(stats_data.items(),key=lambda item: item[1]['name'])

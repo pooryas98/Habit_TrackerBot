@@ -2,7 +2,7 @@ import logging
 from telegram import Update,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,ConversationHandler,CallbackContext,CallbackQueryHandler,JobQueue
 from typing import cast
-from database import get_user_habits,get_habit_name_by_id,delete_habit_and_log
+from database import DatabaseService
 from scheduling.reminder_scheduler import rm_rem_job_by_hid
 from utils import localization as lang,constants as c,keyboards,helpers
 from handlers.common.membership import require_membership
@@ -24,7 +24,10 @@ async def start(upd: Update, ctx: CallbackContext) -> int:
 	user=upd.effective_user; m=upd.effective_message
 	if not user or not m: return ConversationHandler.END
 	try:
-		habits=await get_user_habits(user.id)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		habits = await db_service.get_user_habits(user.id)
 		if not habits: await m.reply_text(lang.MSG_NO_HABITS_TO_DELETE); return ConversationHandler.END
 		kbd=keyboards.select_habit_keyboard(habits,c.CALLBACK_SELECT_HABIT_DELETE)
 		await m.reply_text(lang.PROMPT_SELECT_HABIT_TO_DELETE,reply_markup=InlineKeyboardMarkup(kbd))
@@ -37,9 +40,12 @@ async def ask_confirm_cb(upd: Update, ctx: CallbackContext) -> int:
 	if not q or not q.data or not q.message or ud is None: return ConversationHandler.END
 	await q.answer()
 	try:
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
 		if not q.data.startswith(c.CALLBACK_SELECT_HABIT_DELETE): raise ValueError("Invalid del cb")
 		hid=int(q.data.split('_',1)[1])
-		hname=await get_habit_name_by_id(hid)
+		hname = await db_service.get_habit_name_by_id(hid)
 		if not hname: await q.edit_message_text(lang.ERR_HABIT_NOT_FOUND_GENERIC); _clr(ctx); return ConversationHandler.END
 		ud['del_hid']=hid; ud['del_hname']=hname
 		log.debug(f"U {q.from_user.id} sel h '{hname}' ({hid}) for del.")
@@ -64,7 +70,10 @@ async def perform_del_cb(upd: Update, ctx: CallbackContext) -> int:
 		log.info(f"U {user.id} confirm del h:{hid} ('{hname_ctx}')")
 		job_rem=await rm_rem_job_by_hid(hid,jq)
 		log.info(f"Rem assoc rem job h:{hid}.") if job_rem else log.debug(f"No active rem job/fail rem h:{hid}.")
-		db_del=await delete_habit_and_log(hid,user.id)
+		# Get the database service from context
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		# Use the new service method
+		db_del = await db_service.delete_habit_and_log(hid, user.id)
 		msg_key=lang.CONFIRM_HABIT_DELETED if db_del else lang.ERR_DELETE_FAILED_DB
 		await q.edit_message_text(msg_key.format(habit_name=helpers.escape_html(hname_ctx)))
 	except (IndexError,ValueError) as e: log.error(f"Err parse hid confirm del cb '{q.data}': {e}"); await _err(q,lang.ERR_GENERIC_CALLBACK)

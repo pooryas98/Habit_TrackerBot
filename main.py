@@ -1,19 +1,21 @@
-import logging, asyncio, os, sys, aiosqlite, telegram, config
+import logging, asyncio, os, sys, aiosqlite, telegram
+from config import settings
 from bot.application import create_application
 from bot.lifecycle import run_bot_lifecycle
 from database.connection import initialize_database, close_db, _db as db_conn
+from database.service import DatabaseService
 
-logging.basicConfig(format="%(asctime)s - %(name)s[%(levelname)s] - %(message)s", level=getattr(logging, config.LOG_LEVEL, logging.INFO))
+logging.basicConfig(format="%(asctime)s - %(name)s[%(levelname)s] - %(message)s", level=getattr(logging, settings.log_level, logging.INFO))
 log = logging.getLogger(__name__)
 
 async def main() -> None:
 	log.info("Starting...")
 	log.info(f"Python:{sys.version.split()[0]}, PTB:{telegram.__version__}, aiosqlite:{aiosqlite.__version__}(SQLite {aiosqlite.sqlite_version})")
-	if config.RESET_DB and os.path.exists(config.DB_FILE):
-		log.warning(f"RESET_DB=1. Deleting DB: {config.DB_FILE}")
+	if settings.reset_db_on_start and os.path.exists(settings.database_file):
+		log.warning(f"RESET_DB=1. Deleting DB: {settings.database_file}")
 		try:
 			for suf in ["","-wal","-shm"]:
-				fp=f"{config.DB_FILE}{suf}"
+				fp=f"{settings.database_file}{suf}"
 				if os.path.exists(fp): os.remove(fp); log.debug(f"Removed: {fp}")
 		except OSError as e: log.error(f"Failed deleting DB files: {e}", exc_info=True)
 	try:

@@ -2,7 +2,7 @@ import logging,aiosqlite
 from telegram.ext import CallbackContext,JobQueue
 from telegram.error import Forbidden,BadRequest
 from typing import cast,Optional
-from database import get_habit_name_by_id
+from database import DatabaseService
 from scheduling.reminder_scheduler import rm_rem_job_by_hid
 from utils import localization as lang
 
@@ -17,7 +17,10 @@ async def rem_cb(ctx: CallbackContext):
 		log.error(f"Rem job {job.name} missing uid/hid: {job.data}. Removing."); await rm_rem_job_by_hid(hid,jq) if hid else None; return
 	if not hname:
 		try:
-			hname=await get_habit_name_by_id(hid)
+			# Get the database service from context
+			db_service: DatabaseService = ctx.bot_data['db_service']
+			# Use the new service method
+			hname = await db_service.get_habit_name_by_id(hid)
 			if not hname: log.warning(f"Habit {hid} not found job {job.name}. Removing."); await rm_rem_job_by_hid(hid,jq); return
 		except (aiosqlite.Error,ConnectionError): log.error(f"DB Err fetch hname job {job.name}. Using default."); hname=lang.DEFAULT_HABIT_NAME
 		except Exception as e: log.error(f"Err fetch hname job {job.name}: {e}",exc_info=True); hname=lang.DEFAULT_HABIT_NAME

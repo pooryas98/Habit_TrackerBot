@@ -1,8 +1,10 @@
-import logging,asyncio,config
+import logging,asyncio
 from typing import Optional
 from telegram import Update
 from telegram.ext import Application, JobQueue
+from config import settings
 from database.connection import connect_db, close_db, get_db_connection
+from database.service import DatabaseService
 from scheduling.reminder_scheduler import sched_all_rems
 from handlers import register_all_handlers
 from .error_handler import handle_error
@@ -24,6 +26,13 @@ async def run_bot_lifecycle(app: Application) -> None:
 	"""Manages bot start, run loop, and PTB shutdown via finally."""
 	try:
 		log.info("Connecting DB..."); await connect_db(); log.info("DB connected.")
+		
+		# Create and store the DatabaseService instance in the application context
+		db_conn = await get_db_connection()
+		db_service = DatabaseService(db_conn)
+		app.bot_data['db_service'] = db_service
+		log.info("Database service created and stored in application context.")
+		
 		log.info("Initializing PTB app..."); await app.initialize(); log.info("PTB app initialized.") # Runs post_init
 		log.info("Registering handlers..."); register_all_handlers(app); log.info("Handlers registered.")
 		log.info("Registering error handler..."); app.add_error_handler(handle_error); log.info("Error handler registered.")
@@ -41,7 +50,7 @@ async def run_bot_lifecycle(app: Application) -> None:
 		else: log.warning("Updater not avail, cannot poll.")
 
 		await app.start()
-		log.info(f"Bot running (TZ:{config.USER_TIMEZONE}). Press Ctrl+C to stop.")
+		log.info(f"Bot running (TZ:{settings.user_timezone_obj}). Press Ctrl+C to stop.")
 		await asyncio.Future() # Wait indefinitely until cancelled
 		log.info("asyncio.Future completed (unexpected).")
 

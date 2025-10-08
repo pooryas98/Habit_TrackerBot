@@ -1,4 +1,5 @@
-import aiosqlite,os,logging,config,asyncio
+import aiosqlite,os,logging,asyncio
+from config import settings
 from typing import Optional,List,Tuple,Any
 
 log=logging.getLogger(__name__)
@@ -18,11 +19,11 @@ async def connect_db():
 			if old_conn:
 				try: await asyncio.wait_for(old_conn.close(),timeout=0.5); log.debug("Old problematic DB conn closed.")
 				except Exception: log.warning("Ignoring err closing old conn during reconnect.")
-	log.info(f"Connecting DB: {config.DB_FILE}")
+	log.info(f"Connecting DB: {settings.database_file}")
 	try:
-		db_dir=os.path.dirname(config.DB_FILE)
+		db_dir=os.path.dirname(settings.database_file)
 		if db_dir and not os.path.exists(db_dir): os.makedirs(db_dir); log.info(f"Created DB dir: {db_dir}")
-		db=await aiosqlite.connect(config.DB_FILE,timeout=10)
+		db=await aiosqlite.connect(settings.database_file,timeout=10)
 		await db.execute("PRAGMA journal_mode=WAL;")
 		await db.execute("PRAGMA foreign_keys = ON;")
 		await db.execute("PRAGMA synchronous = NORMAL;")
@@ -51,9 +52,9 @@ async def get_db_connection()->aiosqlite.Connection:
 	return _db
 
 async def initialize_database():
-	log.info(f"Initializing DB schema: {config.DB_FILE}")
+	log.info(f"Initializing DB schema: {settings.database_file}")
 	try:
-		async with aiosqlite.connect(config.DB_FILE,timeout=10) as db:
+		async with aiosqlite.connect(settings.database_file,timeout=10) as db:
 			await db.execute("PRAGMA journal_mode=WAL;")
 			await db.execute("PRAGMA foreign_keys = ON;")
 			await db.execute("CREATE TABLE IF NOT EXISTS Users (user_id INTEGER PRIMARY KEY NOT NULL)")
@@ -85,24 +86,24 @@ async def initialize_database():
 		log.error(f"DB schema init failed: {e}",exc_info=True);
 		raise ConnectionError(f"Failed init DB schema: {e}")
 
-async def _e(sql:str,params:tuple=(),*,last_id:bool=False)->int|None:
+async def execute_query(sql:str,params:tuple=(),*,return_last_id:bool=False)->int|None:
 	db=await get_db_connection()
 	try:
-		async with await db.execute(sql,params) as cur: rc,lid=cur.rowcount,cur.lastrowid if last_id else None
-		await db.commit(); return lid if last_id else rc
+		async with await db.execute(sql,params) as cur: rc,lid=cur.rowcount,cur.lastrowid if return_last_id else None
+		await db.commit(); return lid if return_last_id else rc
 	except aiosqlite.Error as e:
 		log.error(f"DB Exec err: SQL='{sql[:60]}...', P={params}, E='{e}'",exc_info=True)
 		try: await db.rollback(); log.warning("Tx rolled back.")
 		except aiosqlite.Error as rb_e: log.error(f"Rollback fail: {rb_e}")
 		raise
 
-async def _fo(sql:str,params:tuple=())->Tuple|None:
+async def fetch_one(sql:str,params:tuple=())->Tuple|None:
 	db=await get_db_connection()
 	try:
 		async with await db.execute(sql,params) as cur: return await cur.fetchone()
 	except aiosqlite.Error as e: log.error(f"DB FetchOne err: SQL='{sql[:60]}...', P={params}, E='{e}'",exc_info=True); raise
 
-async def _fa(sql:str,params:tuple=())->List[Tuple]:
+async def fetch_all(sql:str,params:tuple=())->List[Tuple]:
 	db=await get_db_connection()
 	try:
 		async with await db.execute(sql,params) as cur: return await cur.fetchall()

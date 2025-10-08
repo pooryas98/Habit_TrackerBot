@@ -1,4 +1,5 @@
-import logging,re,html,config
+import logging,re,html
+from config import settings
 from datetime import datetime,time,date,timedelta
 from typing import Optional,Callable,Any
 from telegram import Update
@@ -8,7 +9,7 @@ from . import localization as lang
 log=logging.getLogger(__name__)
 EXAMPLE_TIME_FORMAT="HH:MM (e.g., 09:00 or 17:30)"
 
-def get_today_date()->date: return datetime.now(config.USER_TIMEZONE).date()
+def get_today_date()->date: return datetime.now(settings.user_timezone_obj).date()
 
 def parse_reminder_time(ts: str)->time|None:
 	"""Parses HH:MM, H:MM, HH, H into time obj. Returns None if invalid."""
