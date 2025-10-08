@@ -129,7 +129,7 @@ habit-tracker-bot/
 
 ## 🧪 Testing
 
-To run tests (Comimg soon!):
+To run tests (Comimg soon!)
 
 ## 🔒 Security
 
