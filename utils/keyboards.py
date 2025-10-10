@@ -1,6 +1,20 @@
-from telegram import InlineKeyboardButton,InlineKeyboardMarkup
+from telegram import InlineKeyboardButton,InlineKeyboardMarkup,KeyboardButton,ReplyKeyboardMarkup
 from typing import List,Tuple,Optional
 from . import localization as lang,constants as c
+
+def get_main_menu_keyboard()->ReplyKeyboardMarkup:
+	"""Generates the main menu reply keyboard."""
+	kbd = [
+		[KeyboardButton(lang.BUTTON_MENU_TODAY), KeyboardButton(lang.BUTTON_MENU_ADD_HABIT)],
+		[KeyboardButton(lang.BUTTON_MENU_HISTORY), KeyboardButton(lang.BUTTON_MENU_STATS)],
+		[KeyboardButton(lang.BUTTON_MENU_HELP)]
+	]
+	return ReplyKeyboardMarkup(kbd, resize_keyboard=True, one_time_keyboard=False)
+
+def get_skip_keyboard(callback_data: str) -> InlineKeyboardMarkup:
+	"""Generates a simple keyboard with a single 'Skip' button."""
+	kbd = [[InlineKeyboardButton(lang.BUTTON_SKIP, callback_data=callback_data)]]
+	return InlineKeyboardMarkup(kbd)
 
 def today_habits_keyboard(habits_data:List[Tuple[int,str,str]])->InlineKeyboardMarkup:
 	kbd:List[List[InlineKeyboardButton]]=[]
@@ -37,6 +51,25 @@ def history_pagination_keyboard(offset:int,total:int,limit:int)->Optional[Inline
 	if offset>0: prev_off=max(0,offset-limit); btns.append(InlineKeyboardButton(lang.BUTTON_PREVIOUS,callback_data=f"{c.CALLBACK_HISTORY_PAGE}{prev_off}"))
 	if offset+limit<total: next_off=offset+limit; btns.append(InlineKeyboardButton(lang.BUTTON_NEXT,callback_data=f"{c.CALLBACK_HISTORY_PAGE}{next_off}"))
 	return InlineKeyboardMarkup([btns]) if btns else None
+
+def get_pagination_keyboard(current_page: int, total_pages: int, callback_prefix: str) -> Optional[InlineKeyboardMarkup]:
+	"""Generates a generic pagination keyboard with Prev, Page #, and Next buttons."""
+	if total_pages <= 1:
+		return None
+
+	btns = []
+	# 'Previous' button
+	if current_page > 1:
+		btns.append(InlineKeyboardButton(lang.BUTTON_PREVIOUS, callback_data=f"{callback_prefix}{current_page - 1}"))
+
+	# Page indicator
+	btns.append(InlineKeyboardButton(f"Page {current_page}/{total_pages}", callback_data=c.CALLBACK_NOOP))
+
+	# 'Next' button
+	if current_page < total_pages:
+		btns.append(InlineKeyboardButton(lang.BUTTON_NEXT, callback_data=f"{callback_prefix}{current_page + 1}"))
+
+	return InlineKeyboardMarkup([btns])
 
 def edit_habit_field_keyboard(hid:int)->InlineKeyboardMarkup:
 	kbd=[[InlineKeyboardButton(lang.BUTTON_EDIT_NAME,callback_data=f"{c.CALLBACK_EDIT_FIELD_PREFIX}name_{hid}")],

@@ -1,8 +1,8 @@
 import logging
 from telegram import Update
-from telegram.ext import Application,CommandHandler,CallbackContext
+from telegram.ext import Application,CommandHandler,CallbackContext,MessageHandler,filters
 from database import DatabaseService
-from utils import localization as lang,constants as c
+from utils import localization as lang,constants as c,keyboards
 from .membership import require_membership
 
 log=logging.getLogger(__name__)
@@ -17,8 +17,7 @@ async def start_cmd(upd: Update, ctx: CallbackContext) -> None:
 		# Use the new service method
 		await db_service.add_user_if_not_exists(usr.id)
 		log.info(f"User {usr.id} ({usr.username or 'NoUN'}) started.")
-		await msg.reply_text(lang.MSG_WELCOME.format(user_name=usr.first_name))
-		await help_cmd(upd,ctx) # Call help after welcome
+		await msg.reply_text(lang.MSG_WELCOME.format(user_name=usr.first_name), reply_markup=keyboards.get_main_menu_keyboard())
 	except ConnectionError: await msg.reply_text(lang.ERR_DATABASE_CONNECTION)
 	except Exception as e: log.error(f"Err /start u:{usr.id}: {e}",exc_info=True)
 
@@ -32,4 +31,5 @@ async def help_cmd(upd: Update, ctx: CallbackContext) -> None:
 def register_start_help_handlers(app: Application):
 	app.add_handler(CommandHandler(c.CMD_START,start_cmd))
 	app.add_handler(CommandHandler(c.CMD_HELP,help_cmd))
+	app.add_handler(MessageHandler(filters.TEXT & filters.Regex(f"^{lang.BUTTON_MENU_HELP}$"), help_cmd))
 	log.info("Registered /start & /help handlers.")

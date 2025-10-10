@@ -73,11 +73,30 @@ async def sel_f_cb(upd: Update, ctx: CallbackContext) -> int:
 		log.debug(f"User wants edit '{fld}' h:{hid}")
 		prompts={"name":lang.PROMPT_EDIT_NAME,"description":lang.PROMPT_EDIT_DESCRIPTION,"category":lang.PROMPT_EDIT_CATEGORY}
 		fmt_args={"habit_name":helpers.escape_html(orig_name)}
-		if fld in ("description","category"): fmt_args["cmd_skip"]=lang.CMD_SKIP
-		await q.edit_message_text(prompts[fld].format(**fmt_args))
+		reply_markup = keyboards.get_skip_keyboard(c.CALLBACK_SKIP_EDIT) if fld in ("description", "category") else None
+		await q.edit_message_text(prompts[fld].format(**fmt_args), reply_markup=reply_markup)
 		return ASK_V
 	except (IndexError,ValueError) as e: log.error(f"Err parse field/ID cb '{q.data}': {e}"); await _err(q,lang.ERR_GENERIC_CALLBACK); _clr(ctx); return ConversationHandler.END
 	except Exception as e: log.error(f"Err sel f edit: {e}",exc_info=True); await _err(q,lang.MSG_ERROR_GENERAL); _clr(ctx); return ConversationHandler.END
+
+async def skip_v(upd: Update, ctx: CallbackContext) -> int:
+	q=upd.callback_query; user=upd.effective_user; ud=ctx.user_data
+	if not q or not user or ud is None: return ConversationHandler.END
+	await q.answer()
+	hid=ud.get('edit_hid'); fld=ud.get('edit_fld'); orig_name=ud.get('edit_hname',lang.DEFAULT_HABIT_NAME)
+	if not hid or not fld: log.warning("Ctx miss (hid/fld) skip_v."); await _err(q,lang.ERR_EDIT_FAILED_CONTEXT); _clr(ctx); return ConversationHandler.END
+
+	log.debug(f"Update h:{hid}, fld:'{fld}' val:SKIPPED u:{user.id}")
+	try:
+		db_service: DatabaseService = ctx.bot_data['db_service']
+		success = await db_service.update_habit(hid, user.id, fld, None)
+		if success:
+			await q.edit_message_text(lang.CONFIRM_HABIT_UPDATED.format(habit_name=helpers.escape_html(orig_name)))
+		else: await q.edit_message_text(lang.ERR_EDIT_FAILED_DB)
+	except ConnectionError: await _err(q, lang.ERR_DATABASE_CONNECTION)
+	except Exception as e: log.error(f"Err update h:{hid} DB on skip: {e}",exc_info=True); await _err(q, lang.ERR_EDIT_FAILED_DB)
+
+	_clr(ctx); return ConversationHandler.END
 
 async def recv_v(upd: Update, ctx: CallbackContext) -> int:
 	m=upd.effective_message; user=upd.effective_user; ud=ctx.user_data
@@ -85,10 +104,8 @@ async def recv_v(upd: Update, ctx: CallbackContext) -> int:
 	hid=ud.get('edit_hid'); fld=ud.get('edit_fld'); orig_name=ud.get('edit_hname',lang.DEFAULT_HABIT_NAME)
 	if not hid or not fld: log.warning("Ctx miss (hid/fld) recv_v."); await m.reply_text(lang.ERR_EDIT_FAILED_CONTEXT); _clr(ctx); return ConversationHandler.END
 	val_raw=m.text.strip(); new_val:Optional[str]=val_raw
-	is_skip=val_raw.lower() in ('/skip',lang.CMD_SKIP.lower())
 
-	if fld in ("description","category") and is_skip: new_val=None; log.debug(f"Set field '{fld}' None (skip).")
-	elif fld=="name" and (not val_raw or is_skip):
+	if fld=="name" and not val_raw:
 		await m.reply_text(f"{lang.ERR_EDIT_FAILED_NAME_EMPTY}\n{lang.PROMPT_EDIT_NAME.format(habit_name=helpers.escape_html(orig_name))}")
 		return ASK_V # Ask again
 
@@ -111,14 +128,16 @@ async def cancel(upd: Update, ctx: CallbackContext) -> int:
 	return await helpers.cancel_conv(upd,ctx,clear_ctx_func=_clr,log_msg="Edit habit conv cancelled.")
 
 def get_handler()->ConversationHandler:
-	skip_f=filters.Regex(f'(?i)^(/skip|{lang.CMD_SKIP})$')
 	text_f=filters.TEXT & ~filters.COMMAND
 	return ConversationHandler(
 		entry_points=[CommandHandler(c.CMD_EDIT_HABIT,start)],
 		states={
 			SEL_H:[CallbackQueryHandler(sel_h_cb,pattern=f"^{c.CALLBACK_SELECT_HABIT_EDIT}")],
 			SEL_F:[CallbackQueryHandler(sel_f_cb,pattern=f"^{c.CALLBACK_EDIT_FIELD_PREFIX}")],
-			ASK_V:[MessageHandler(text_f|skip_f,recv_v)],
+			ASK_V:[
+				CallbackQueryHandler(skip_v, pattern=f"^{c.CALLBACK_SKIP_EDIT}$"),
+				MessageHandler(text_f,recv_v)
+			],
 		},
 		fallbacks=[CommandHandler(c.CMD_CANCEL,cancel)],persistent=False,name="edit_habit_conv"
 	)
