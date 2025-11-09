@@ -1,9 +1,6 @@
-import logging,asyncio
-from typing import Optional
-from telegram import Update
-from telegram.ext import Application, JobQueue
-from config import settings
-from database.connection import connect_db, close_db, get_db_connection
+import logging
+from telegram.ext import Application
+from database.connection import close_db
 from database.service import DatabaseService
 from scheduling.reminder_scheduler import sched_all_rems
 from handlers import register_all_handlers
@@ -11,73 +8,68 @@ from .error_handler import handle_error
 
 log = logging.getLogger(__name__)
 
+
 async def post_init(app: Application) -> None:
-	log.info("App initialized.")
-	jq = app.job_queue
-	if not jq: log.warning("! JobQueue NOT FOUND post init!")
+    """
+    Called by PTB after application initialization.
+
+    - Ensures a shared DatabaseService is available in bot_data.
+    - Registers all handlers.
+    - Registers the central error handler.
+    - Schedules all existing reminders.
+    """
+    log.info("post_init: start")
+
+    # Ensure a DatabaseService is attached (using current global connection).
+    # If get_db_connection fails, this will be caught by handlers on usage.
+    try:
+        if "db_service" not in app.bot_data:
+            db_service = DatabaseService()
+            app.bot_data["db_service"] = db_service
+            log.info("post_init: DatabaseService attached to app.bot_data.")
+    except Exception as e:
+        log.critical(f"post_init: Failed attaching DatabaseService: {e}", exc_info=True)
+
+    # Register all handlers once.
+    try:
+        register_all_handlers(app)
+        log.info("post_init: handlers registered.")
+    except Exception as e:
+        log.critical(f"post_init: Failed registering handlers: {e}", exc_info=True)
+
+    # Register central error handler.
+    try:
+        app.add_error_handler(handle_error)
+        log.info("post_init: error handler registered.")
+    except Exception as e:
+        log.critical(f"post_init: Failed registering error handler: {e}", exc_info=True)
+
+    # Schedule reminders using existing DB state, if possible.
+    jq = app.job_queue
+    if not jq:
+        log.warning("post_init: JobQueue not found; skipping reminder scheduling.")
+        return
+
+    try:
+        db_service: DatabaseService = app.bot_data.get("db_service") or DatabaseService()
+        db_conn = await db_service.get_connection()
+        await sched_all_rems(db_conn, jq)
+        log.info("post_init: initial reminders scheduled.")
+    except Exception as e:
+        log.error(f"post_init: Failed to schedule reminders: {e}", exc_info=True)
+
+    log.info("post_init: complete")
+
 
 async def post_stop(app: Application) -> None:
-	log.info("post_stop: Attempting DB close...")
-	try: await close_db(); log.info("post_stop: close_db() finished.")
-	except Exception as e: log.error(f"Error in post_stop during close_db: {e}", exc_info=True)
-	log.info("post_stop: handler finished.")
-
-async def run_bot_lifecycle(app: Application) -> None:
-	"""Manages bot start, run loop, and PTB shutdown via finally."""
-	try:
-		log.info("Connecting DB..."); await connect_db(); log.info("DB connected.")
-		
-		# Create and store the DatabaseService instance in the application context
-		db_conn = await get_db_connection()
-		db_service = DatabaseService(db_conn)
-		app.bot_data['db_service'] = db_service
-		log.info("Database service created and stored in application context.")
-		
-		log.info("Initializing PTB app..."); await app.initialize(); log.info("PTB app initialized.") # Runs post_init
-		log.info("Registering handlers..."); register_all_handlers(app); log.info("Handlers registered.")
-		log.info("Registering error handler..."); app.add_error_handler(handle_error); log.info("Error handler registered.")
-
-		log.info("Scheduling reminders...")
-		jq = app.job_queue
-		if jq:
-			try: await sched_all_rems(await get_db_connection(), jq); log.info("Initial reminder sched done.")
-			except ConnectionError: log.critical("DB unavailable for initial reminder sched. Skipped.")
-			except Exception as e: log.error(f"Err initial reminder sched: {e}", exc_info=True)
-		else: log.error("! JobQueue not found! Reminder sched skipped.")
-
-		if app.updater:
-			log.info("Starting polling..."); await app.updater.start_polling(allowed_updates=Update.ALL_TYPES); log.info("Polling started.")
-		else: log.warning("Updater not avail, cannot poll.")
-
-		await app.start()
-		log.info(f"Bot running (TZ:{settings.user_timezone_obj}). Press Ctrl+C to stop.")
-		await asyncio.Future() # Wait indefinitely until cancelled
-		log.info("asyncio.Future completed (unexpected).")
-
-	except (KeyboardInterrupt, SystemExit, asyncio.CancelledError) as sig:
-		log.warning(f"Lifecycle recv shutdown ({type(sig).__name__}). Entering finally...")
-	except ConnectionError as e: log.critical(f"DB conn error during lifecycle: {e}", exc_info=True)
-	except Exception as e: log.critical(f"Critical unexpected err in lifecycle: {e}", exc_info=True)
-
-	finally:
-		log.warning(">>> LIFECYCLE FINALLY START <<<")
-		if app:
-			log.info("PTB shutdown sequence initiated...")
-			if app.updater and app.updater.running:
-				log.info("Stopping updater...")
-				try: await app.updater.stop(); log.info("Updater stopped.")
-				except Exception as e: log.error(f"Err stopping updater: {e}", exc_info=True)
-			if app.running:
-				log.info("Stopping app (dispatcher/JQ)...")
-				try: await app.stop(); log.info("App stopped.") # Includes JQ stop
-				except Exception as e: log.error(f"Err stopping app: {e}", exc_info=True)
-			log.info("Shutting down app (runs post_stop)...")
-			try: await app.shutdown(); log.info("App shutdown complete.")
-			except Exception as e: log.error(f"Err during app shutdown: {e}", exc_info=True)
-			# Explicit post_stop call (keep as safeguard if shutdown unreliable)
-			log.info("Attempting explicit post_stop call (safeguard)...")
-			try: await post_stop(app); log.info("Explicit post_stop finished.")
-			except Exception as e_ps: log.error(f"Error during explicit post_stop: {e_ps}", exc_info=True)
-			log.info("PTB shutdown sequence finished.")
-		else: log.warning("App obj None in finally, skipping PTB shutdown.")
-		log.warning(">>> LIFECYCLE FINALLY END <<<")
+    """
+    Called by PTB when the application is shutting down.
+    Ensures the shared DB connection is closed.
+    """
+    log.info("post_stop: Attempting DB close...")
+    try:
+        await close_db()
+        log.info("post_stop: close_db() finished.")
+    except Exception as e:
+        log.error(f"post_stop: Error during close_db: {e}", exc_info=True)
+    log.info("post_stop: handler finished.")

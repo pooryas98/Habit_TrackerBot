@@ -63,17 +63,20 @@ async def rm_rem_job_by_hid(hid: int, jq: JobQueue) -> bool:
 	"""Removes job from queue and DB. Returns True if DB entry found/removed."""
 	log.info(f"Attempt remove rem job/DB h:{hid}")
 	try:
-		# Create DatabaseService with global connection
-		from database.connection import get_db_connection
-		conn = await get_db_connection()
-		db_service = DatabaseService(conn)
-		
+		# Use shared DatabaseService (global connection via get_db_connection)
+		db_service = DatabaseService()
 		job_name_db = await db_service.remove_reminder_by_habit_id(hid)
 		if job_name_db:
 			log.info(f"Rem h:{hid} rem DB. Job name:'{job_name_db}'. Attempt queue removal.")
 			job_removed_q=_rm_job_by_name(jq,job_name_db)
-			if not job_removed_q: log.warning(f"DB rem h:{hid} removed, but no active job '{job_name_db}' in queue.")
+			if not job_removed_q:
+				log.warning(f"DB rem h:{hid} removed, but no active job '{job_name_db}' in queue.")
 			return True
-		else: log.warning(f"No rem found DB h:{hid}. No job rem attempted."); return False
-	except (aiosqlite.Error,ConnectionError) as e: log.error(f"DB err rem rem h:{hid}: {e}",exc_info=True); return False
-	except Exception as e: log.error(f"Err rem rem h:{hid}: {e}",exc_info=True); return False
+		log.warning(f"No rem found DB h:{hid}. No job rem attempted.")
+		return False
+	except (aiosqlite.Error,ConnectionError) as e:
+		log.error(f"DB err rem rem h:{hid}: {e}",exc_info=True)
+		return False
+	except Exception as e:
+		log.error(f"Err rem rem h:{hid}: {e}",exc_info=True)
+		return False

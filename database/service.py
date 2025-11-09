@@ -2,7 +2,7 @@ import logging
 import aiosqlite
 from typing import Optional, List, Tuple, Dict, Any
 from datetime import date, time, datetime, timedelta
-from .connection import execute_query, fetch_one, fetch_all
+from .connection import get_db_connection
 
 
 class DatabaseService:
@@ -14,10 +14,12 @@ class DatabaseService:
     def __init__(self, connection: Optional[aiosqlite.Connection] = None):
         """
         Initialize the database service.
-        
+
         Args:
-            connection: Optional aiosqlite connection. If not provided, 
-                       will use global connection via connection module.
+            connection: Optional aiosqlite connection. When provided, all
+                        operations use this connection. Otherwise, the
+                        global connection from connection.get_db_connection()
+                        is used.
         """
         self._conn = connection
         self.log = logging.getLogger(self.__class__.__name__)
@@ -29,8 +31,6 @@ class DatabaseService:
         """
         if self._conn:
             return self._conn
-        # Fallback to global connection if needed
-        from .connection import get_db_connection
         return await get_db_connection()
     
     async def add_user_if_not_exists(self, user_id: int) -> bool:
@@ -45,7 +45,10 @@ class DatabaseService:
         """
         sql = "INSERT OR IGNORE INTO Users (user_id) VALUES (?)"
         try:
-            result = await execute_query(sql, (user_id,))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (user_id,)) as cur:
+                result = cur.rowcount
+            await conn.commit()
             if result is not None and result > 0:
                 self.log.info(f"New user: {user_id}")
                 return True
@@ -55,8 +58,9 @@ class DatabaseService:
             else:
                 self.log.warning(f"Add user {user_id} unexpected rc: {result}")
                 return False
-        except aiosqlite.Error:
-            return False  # Logged by execute_query
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error add_user_if_not_exists u:{user_id}: {e}", exc_info=True)
+            return False
     
     async def add_habit(self, user_id: int, name: str, description: Optional[str] = None, category: Optional[str] = None) -> Optional[int]:
         """
@@ -74,48 +78,55 @@ class DatabaseService:
         try:
             await self.add_user_if_not_exists(user_id)
             sql = "INSERT INTO Habits (user_id, name, description, category) VALUES (?, ?, ?, ?)"
-            new_id = await execute_query(sql, (user_id, name, description, category), return_last_id=True)
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (user_id, name, description, category)) as cur:
+                new_id = cur.lastrowid
+            await conn.commit()
             if new_id is not None:
                 self.log.info(f"Added habit '{name}' (ID:{new_id}) u:{user_id}")
                 return new_id
-            else:
-                self.log.error(f"Failed get last ID add habit u:{user_id}")
-                return None
-        except aiosqlite.Error:
-            return None  # Logged by execute_query
+            self.log.error(f"Failed get last ID add habit u:{user_id}")
+            return None
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error add_habit u:{user_id}: {e}", exc_info=True)
+            return None
     
     async def get_user_habits(self, user_id: int) -> List[Tuple[int, str, Optional[str], Optional[str]]]:
         """
         Retrieves all habits for user.
-        
-        Args:
-            user_id: Telegram user ID
-            
+
         Returns:
             List of tuples (habit_id, name, description, category)
         """
         sql = "SELECT habit_id, name, description, category FROM Habits WHERE user_id = ? ORDER BY created_at ASC"
         try:
-            return await fetch_all(sql, (user_id,))
-        except aiosqlite.Error:
-            return []  # Logged by fetch_all
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (user_id,)) as cur:
+                rows = await cur.fetchall()
+            # Ensure concrete tuple typing
+            return [
+                (int(r[0]), str(r[1]), r[2], r[3])
+                for r in rows
+            ]
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_user_habits u:{user_id}: {e}", exc_info=True)
+            return []
     
     async def find_habit_by_name(self, user_id: int, name: str) -> Optional[Tuple[int, str]]:
         """
         Finds habit by name (case-insensitive). Returns (hid, name) or None.
-        
-        Args:
-            user_id: Telegram user ID
-            name: Habit name to search for
-            
-        Returns:
-            Tuple of (habit_id, name) or None if not found
         """
         sql = "SELECT habit_id, name FROM Habits WHERE user_id = ? AND name = ? COLLATE NOCASE LIMIT 1"
         try:
-            return await fetch_one(sql, (user_id, name))
-        except aiosqlite.Error:
-            return None  # Logged by fetch_one
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (user_id, name)) as cur:
+                row = await cur.fetchone()
+            if not row:
+                return None
+            return int(row[0]), str(row[1])
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error find_habit_by_name u:{user_id}: {e}", exc_info=True)
+            return None
     
     async def get_habit_name_by_id(self, habit_id: int) -> Optional[str]:
         """
@@ -129,10 +140,13 @@ class DatabaseService:
         """
         sql = "SELECT name FROM Habits WHERE habit_id = ?"
         try:
-            result = await fetch_one(sql, (habit_id,))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (habit_id,)) as cur:
+                result = await cur.fetchone()
             return result[0] if result else None
-        except aiosqlite.Error:
-            return None  # Logged by fetch_one
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_habit_name_by_id h:{habit_id}: {e}", exc_info=True)
+            return None
     
     async def delete_habit_and_log(self, habit_id: int, user_id: int) -> bool:
         """
@@ -148,7 +162,10 @@ class DatabaseService:
         self.log.warning(f"Attempt del habit {habit_id} u:{user_id}")
         sql = "DELETE FROM Habits WHERE habit_id = ? AND user_id = ?"
         try:
-            result = await execute_query(sql, (habit_id, user_id))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (habit_id, user_id)) as cur:
+                result = cur.rowcount
+            await conn.commit()
             if result is not None and result > 0:
                 self.log.info(f"Deleted habit {habit_id} (cascaded) u:{user_id}.")
                 return True
@@ -158,8 +175,9 @@ class DatabaseService:
             else:
                 self.log.error(f"Del habit {habit_id} unexpected rc: {result}")
                 return False
-        except aiosqlite.Error:
-            return False  # Logged by execute_query
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error delete_habit_and_log h:{habit_id} u:{user_id}: {e}", exc_info=True)
+            return False
     
     async def update_habit(self, habit_id: int, user_id: int, field: str, value: Optional[str]) -> bool:
         """
@@ -184,7 +202,10 @@ class DatabaseService:
 
         sql = f"UPDATE Habits SET {field} = ? WHERE habit_id = ? AND user_id = ?"  # Safe f-string
         try:
-            result = await execute_query(sql, (value, habit_id, user_id))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (value, habit_id, user_id)) as cur:
+                result = cur.rowcount
+            await conn.commit()
             if result is not None and result > 0:
                 self.log.info(f"Updated '{field}' h:{habit_id} u:{user_id}.")
                 return True
@@ -194,8 +215,9 @@ class DatabaseService:
             else:
                 self.log.error(f"Update habit {habit_id} unexpected rc: {result}")
                 return False
-        except aiosqlite.Error:
-            return False  # Logged by execute_query
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error update_habit h:{habit_id} u:{user_id} field:{field}: {e}", exc_info=True)
+            return False
     
     async def mark_habit_done(self, user_id: int, habit_id: int, log_date: date) -> str:
         """
@@ -210,9 +232,17 @@ class DatabaseService:
             'success' if marked, 'already_done' if already marked, 'error' if failed
         """
         date_str = log_date.isoformat()
-        sql = "INSERT INTO HabitLog (habit_id,user_id,log_date,status) VALUES (?,?,?,'done') ON CONFLICT(habit_id,user_id,log_date) DO UPDATE SET status='done' WHERE status!='done'"
+        sql = (
+            "INSERT INTO HabitLog (habit_id,user_id,log_date,status) "
+            "VALUES (?,?,?,'done') "
+            "ON CONFLICT(habit_id,user_id,log_date) "
+            "DO UPDATE SET status='done' WHERE status!='done'"
+        )
         try:
-            result = await execute_query(sql, (habit_id, user_id, date_str))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (habit_id, user_id, date_str)) as cur:
+                result = cur.rowcount
+            await conn.commit()
             if result is not None and result > 0:
                 self.log.info(f"Marked h:{habit_id} done u:{user_id} on {date_str}")
                 return "success"
@@ -222,8 +252,9 @@ class DatabaseService:
             else:
                 self.log.error(f"Mark done h:{habit_id} unexp rc: {result}")
                 return "error"
-        except aiosqlite.Error:
-            return "error"  # Logged by execute_query
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error mark_habit_done h:{habit_id} u:{user_id}: {e}", exc_info=True)
+            return "error"
     
     async def get_todays_habit_statuses(self, user_id: int, today: date) -> Dict[int, str]:
         """
@@ -249,14 +280,17 @@ class DatabaseService:
             ORDER BY h.created_at
             """
             params = (date_str, user_id, user_id)
-            rows = await fetch_all(sql, params)
+            conn = await self.get_connection()
+            async with await conn.execute(sql, params) as cur:
+                rows = await cur.fetchall()
             
             for habit_id, status in rows:
                 statuses[habit_id] = status
             
             return statuses
-        except aiosqlite.Error:
-            return {}  # Logged by helpers
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_todays_habit_statuses u:{user_id}: {e}", exc_info=True)
+            return {}
     
     async def get_habit_log(self, user_id: int, habit_id: Optional[int] = None, limit: int = 30, offset: int = 0) -> List[Tuple[date, str, str]]:
         """
@@ -282,16 +316,21 @@ class DatabaseService:
             
             sql += " ORDER BY hl.log_date DESC, h.name ASC LIMIT ? OFFSET ?"
             params.extend([limit, offset])
-            
-            for date_str, habit_name, status in await fetch_all(sql, tuple(params)):
+
+            conn = await self.get_connection()
+            async with await conn.execute(sql, tuple(params)) as cur:
+                rows = await cur.fetchall()
+
+            for date_str, habit_name, status in rows:
                 try:
                     entries.append((date.fromisoformat(date_str), habit_name, status))
                 except (ValueError, TypeError):
                     self.log.warning(f"Skip log invalid date: d='{date_str}', h='{habit_name}'")
             
             return entries
-        except aiosqlite.Error:
-            return []  # Logged by fetch_all
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_habit_log u:{user_id}: {e}", exc_info=True)
+            return []
 
     async def get_habit_log_count(self, user_id: int, habit_id: Optional[int] = None) -> int:
         """
@@ -310,10 +349,13 @@ class DatabaseService:
             if habit_id is not None:
                 sql += " AND habit_id = ?"
                 params.append(habit_id)
-            result = await fetch_one(sql, tuple(params))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, tuple(params)) as cur:
+                result = await cur.fetchone()
             return result[0] if result else 0
-        except aiosqlite.Error:
-            return 0  # Logged by fetch_one
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_habit_log_count u:{user_id}: {e}", exc_info=True)
+            return 0
 
     async def get_completion_stats(self, user_id: int, days: int = 30) -> Dict[int, Dict[str, Any]]:
         """
@@ -343,7 +385,9 @@ class DatabaseService:
             placeholders = ','.join('?' * len(habit_ids))
             sql = f"SELECT habit_id, log_date FROM HabitLog WHERE user_id=? AND habit_id IN ({placeholders}) AND log_date BETWEEN ? AND ? AND status='done' ORDER BY log_date DESC"
             params = (user_id,) + tuple(habit_ids) + (start_s, end_s)
-            raw_logs = await fetch_all(sql, params)
+            conn = await self.get_connection()
+            async with await conn.execute(sql, params) as cur:
+                raw_logs = await cur.fetchall()
             
             logs_by_habit: Dict[int, Dict[date, bool]] = {hid: {} for hid in habit_ids}
             for hid, ds in raw_logs:
@@ -383,8 +427,9 @@ class DatabaseService:
                 }
             
             return stats
-        except aiosqlite.Error:
-            return {}  # Logged by helpers
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_completion_stats u:{user_id}: {e}", exc_info=True)
+            return {}
     
     async def add_or_update_reminder(self, user_id: int, habit_id: int, reminder_time: time, job_name: str) -> bool:
         """
@@ -401,16 +446,27 @@ class DatabaseService:
         """
         await self.add_user_if_not_exists(user_id)
         time_str = reminder_time.strftime('%H:%M:%S')
-        sql = "INSERT INTO Reminders (user_id,habit_id,reminder_time,job_name) VALUES (?,?,?,?) ON CONFLICT(habit_id) DO UPDATE SET reminder_time=excluded.reminder_time, job_name=excluded.job_name, user_id=excluded.user_id"
+        sql = (
+            "INSERT INTO Reminders (user_id,habit_id,reminder_time,job_name) "
+            "VALUES (?,?,?,?) "
+            "ON CONFLICT(habit_id) DO UPDATE SET "
+            "reminder_time=excluded.reminder_time, "
+            "job_name=excluded.job_name, "
+            "user_id=excluded.user_id"
+        )
         try:
-            await execute_query(sql, (user_id, habit_id, time_str, job_name))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (user_id, habit_id, time_str, job_name)) as _:
+                pass
+            await conn.commit()
             self.log.info(f"Add/Upd rem h:{habit_id} (Job:{job_name}) u:{user_id} at {time_str}")
             return True
         except aiosqlite.IntegrityError as e:
             self.log.error(f"Fail add/upd rem h:{habit_id}: IntegrityErr (Habit del?): {e}")
             return False
-        except aiosqlite.Error:
-            return False  # Logged by execute_query
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error add_or_update_reminder h:{habit_id} u:{user_id}: {e}", exc_info=True)
+            return False
     
     async def get_reminder_by_habit_id(self, habit_id: int) -> Optional[Tuple[int, time, str]]:
         """
@@ -424,7 +480,9 @@ class DatabaseService:
         """
         sql = "SELECT user_id, reminder_time, job_name FROM Reminders WHERE habit_id = ?"
         try:
-            row = await fetch_one(sql, (habit_id,))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (habit_id,)) as cur:
+                row = await cur.fetchone()
             if row:
                 user_id, time_str, job_name = row
                 try:
@@ -433,8 +491,9 @@ class DatabaseService:
                     self.log.error(f"Invalid time fmt '{time_str}' DB rem h:{habit_id}")
                     return None
             return None
-        except aiosqlite.Error:
-            return None  # Logged by fetch_one
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_reminder_by_habit_id h:{habit_id}: {e}", exc_info=True)
+            return None
     
     async def get_user_reminders(self, user_id: int) -> List[Tuple[int, time, str]]:
         """
@@ -449,15 +508,18 @@ class DatabaseService:
         reminders: List[Tuple[int, time, str]] = []
         sql = "SELECT habit_id, reminder_time, job_name FROM Reminders WHERE user_id = ? ORDER BY reminder_time ASC"
         try:
-            raw_rems = await fetch_all(sql, (user_id,))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (user_id,)) as cur:
+                raw_rems = await cur.fetchall()
             for habit_id, time_str, job_name in raw_rems:
                 try:
                     reminders.append((habit_id, datetime.strptime(time_str, '%H:%M:%S').time(), job_name))
                 except (ValueError, TypeError):
                     self.log.warning(f"Skip user rem h:{habit_id} invalid time DB: '{time_str}'")
             return reminders
-        except aiosqlite.Error:
-            return []  # Logged by fetch_all
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_user_reminders u:{user_id}: {e}", exc_info=True)
+            return []
 
     async def get_all_reminders(self) -> List[Tuple[int, int, time, str]]:
         """
@@ -469,15 +531,18 @@ class DatabaseService:
         reminders: List[Tuple[int, int, time, str]] = []
         sql = "SELECT user_id, habit_id, reminder_time, job_name FROM Reminders ORDER BY user_id, reminder_time"
         try:
-            raw_rems = await fetch_all(sql)
+            conn = await self.get_connection()
+            async with await conn.execute(sql) as cur:
+                raw_rems = await cur.fetchall()
             for user_id, habit_id, time_str, job_name in raw_rems:
                 try:
                     reminders.append((user_id, habit_id, datetime.strptime(time_str, '%H:%M:%S').time(), job_name))
                 except (ValueError, TypeError):
                     self.log.warning(f"Skip rem h:{habit_id} invalid time DB: '{time_str}'")
             return reminders
-        except aiosqlite.Error:
-            return []  # Logged by fetch_all
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error get_all_reminders: {e}", exc_info=True)
+            return []
     
     async def remove_reminder_by_habit_id(self, habit_id: int) -> Optional[str]:
         """
@@ -497,7 +562,10 @@ class DatabaseService:
         _, _, job_name = rem_data
         sql = "DELETE FROM Reminders WHERE habit_id = ?"
         try:
-            result = await execute_query(sql, (habit_id,))
+            conn = await self.get_connection()
+            async with await conn.execute(sql, (habit_id,)) as cur:
+                result = cur.rowcount
+            await conn.commit()
             if result is not None and result > 0:
                 self.log.info(f"Removed rem h:{habit_id} (Job:{job_name}) DB.")
                 return job_name
@@ -507,5 +575,6 @@ class DatabaseService:
             else:
                 self.log.error(f"Del rem h:{habit_id} unexpected rc: {result}")
                 return None
-        except aiosqlite.Error:
-            return None  # Logged by execute_query
+        except aiosqlite.Error as e:
+            self.log.error(f"DB error remove_reminder_by_habit_id h:{habit_id}: {e}", exc_info=True)
+            return None
